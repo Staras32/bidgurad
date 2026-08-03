@@ -16,3 +16,4 @@ export * from './Modal';
 export * from './Tooltip';
 export * from './Skeleton';
 export * from './EmptyState';
+export * from './Stepper';

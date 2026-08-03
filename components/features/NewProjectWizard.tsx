@@ -1,0 +1,492 @@
+'use client';
+
+import { useState, type ReactNode } from 'react';
+import Link from 'next/link';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  CheckCircle2,
+  FileSpreadsheet,
+  FileText,
+  Loader2,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  X,
+} from 'lucide-react';
+
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  FileUpload,
+  Input,
+  Skeleton,
+  Stepper,
+  Table,
+  TableBody,
+  TableCell,
+  TableHeadCell,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from '@/components/ui';
+import { uid } from '@/lib/uid';
+import { detectFileRows, type DetectedFileType } from '@/lib/utils/detectFileRows';
+
+const STEPS = [
+  { label: 'Project' },
+  { label: 'Reference Document' },
+  { label: 'Supplier Quotes' },
+  { label: 'Review' },
+];
+
+type UploadStatus = 'reading' | 'success' | 'error';
+
+interface UploadedFile {
+  fileName: string;
+  status: UploadStatus;
+  fileType: DetectedFileType;
+  rowCount: number | null;
+  error?: string;
+}
+
+interface SupplierRow {
+  id: string;
+  name: string;
+  upload: UploadedFile | null;
+}
+
+interface ProjectInfo {
+  name: string;
+  client: string;
+  description: string;
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function readUpload(file: File): Promise<UploadedFile> {
+  const [detection] = await Promise.all([detectFileRows(file), wait(500)]);
+  return {
+    fileName: file.name,
+    status: detection.error ? 'error' : 'success',
+    fileType: detection.fileType,
+    rowCount: detection.rowCount,
+    error: detection.error,
+  };
+}
+
+function FieldLabel({ htmlFor, children, optional }: { htmlFor: string; children: ReactNode; optional?: boolean }) {
+  return (
+    <label htmlFor={htmlFor} className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-gray-700">
+      {children}
+      {optional && <span className="text-xs font-normal text-gray-400">(optional)</span>}
+    </label>
+  );
+}
+
+function FileTypeIcon({ fileType }: { fileType: DetectedFileType }) {
+  const Icon = fileType === 'pdf' ? FileText : FileSpreadsheet;
+  return (
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary-50 text-primary-600">
+      <Icon size={17} />
+    </div>
+  );
+}
+
+function fileTypeLabel(fileType: DetectedFileType): string {
+  if (fileType === 'xlsx') return 'Excel';
+  if (fileType === 'csv') return 'CSV';
+  if (fileType === 'pdf') return 'PDF';
+  return 'File';
+}
+
+function UploadedFileCard({ upload, onRemove }: { upload: UploadedFile; onRemove: () => void }) {
+  if (upload.status === 'reading') {
+    return (
+      <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
+        <Skeleton className="h-9 w-9 shrink-0 rounded-md" />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Skeleton className="h-3 w-40" />
+          <Skeleton className="h-2.5 w-28" />
+        </div>
+        <Loader2 className="shrink-0 animate-spin text-gray-300" size={16} aria-hidden />
+      </div>
+    );
+  }
+
+  if (upload.status === 'error') {
+    return (
+      <Alert variant="error" title={upload.fileName} onClose={onRemove}>
+        {upload.error ?? 'This file could not be read.'}
+      </Alert>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
+      <FileTypeIcon fileType={upload.fileType} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-gray-900">{upload.fileName}</p>
+        <div className="mt-1 flex items-center gap-2">
+          <Badge variant="neutral">{fileTypeLabel(upload.fileType)}</Badge>
+          <span className="text-xs text-gray-500">
+            {upload.rowCount !== null ? `${upload.rowCount.toLocaleString('en-US')} rows detected` : 'Rows confirmed during analysis'}
+          </span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${upload.fileName}`}
+        className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors duration-150 ease-out hover:bg-gray-100 hover:text-gray-700"
+      >
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
+}
+
+export function NewProjectWizard() {
+  const [step, setStep] = useState(1);
+  const [submitted, setSubmitted] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const [projectInfo, setProjectInfo] = useState<ProjectInfo>({ name: '', client: '', description: '' });
+  const [referenceDoc, setReferenceDoc] = useState<UploadedFile | null>(null);
+  const [suppliers, setSuppliers] = useState<SupplierRow[]>([
+    { id: uid(), name: '', upload: null },
+    { id: uid(), name: '', upload: null },
+  ]);
+
+  const step1Valid = projectInfo.name.trim().length > 0 && projectInfo.client.trim().length > 0;
+  const step2Valid = referenceDoc?.status === 'success';
+  const step3Valid =
+    suppliers.length > 0 && suppliers.every((s) => s.name.trim().length > 0 && s.upload?.status === 'success');
+
+  const canContinue = step === 1 ? step1Valid : step === 2 ? step2Valid : step === 3 ? step3Valid : true;
+
+  const goNext = () => setStep((s) => Math.min(4, s + 1));
+  const goBack = () => setStep((s) => Math.max(1, s - 1));
+
+  const handleReferenceFiles = async (files: FileList) => {
+    const file = files[0];
+    if (!file) return;
+    setReferenceDoc({ fileName: file.name, status: 'reading', fileType: 'unknown', rowCount: null });
+    const result = await readUpload(file);
+    setReferenceDoc(result);
+  };
+
+  const handleSupplierFiles = async (supplierId: string, files: FileList) => {
+    const file = files[0];
+    if (!file) return;
+    setSuppliers((prev) =>
+      prev.map((s) =>
+        s.id === supplierId
+          ? { ...s, upload: { fileName: file.name, status: 'reading', fileType: 'unknown', rowCount: null } }
+          : s
+      )
+    );
+    const result = await readUpload(file);
+    setSuppliers((prev) => prev.map((s) => (s.id === supplierId ? { ...s, upload: result } : s)));
+  };
+
+  const addSupplier = () => setSuppliers((prev) => [...prev, { id: uid(), name: '', upload: null }]);
+  const removeSupplier = (id: string) => setSuppliers((prev) => prev.filter((s) => s.id !== id));
+  const renameSupplier = (id: string, name: string) =>
+    setSuppliers((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
+  const clearSupplierUpload = (id: string) =>
+    setSuppliers((prev) => prev.map((s) => (s.id === id ? { ...s, upload: null } : s)));
+
+  const handleAnalyze = async () => {
+    setAnalyzing(true);
+    await wait(900);
+    setAnalyzing(false);
+    setSubmitted(true);
+  };
+
+  const referenceRows = referenceDoc?.rowCount ?? null;
+
+  if (submitted) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-6">
+        <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success-50 text-success-600">
+            <CheckCircle2 size={24} />
+          </div>
+          <div className="space-y-1.5">
+            <h1 className="text-lg font-semibold text-gray-900">Project submitted for analysis</h1>
+            <p className="text-sm text-gray-500">
+              {projectInfo.name} will be compared against {suppliers.length} supplier quote
+              {suppliers.length === 1 ? '' : 's'}. You&apos;ll be notified once BidGuard finishes.
+            </p>
+          </div>
+          <Link href="/">
+            <Button variant="secondary" className="mt-2">
+              Back to home
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="border-b border-gray-100 bg-white">
+        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-6">
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <ShieldCheck className="text-primary-600" size={18} aria-hidden />
+            BidGuard
+          </div>
+          <Link
+            href="/"
+            aria-label="Close"
+            className="rounded-md p-1.5 text-gray-400 transition-colors duration-150 ease-out hover:bg-gray-100 hover:text-gray-700"
+          >
+            <X size={18} />
+          </Link>
+        </div>
+      </header>
+
+      <main className="flex-1">
+        <div className="mx-auto max-w-3xl px-6 py-10">
+          <Stepper steps={STEPS} currentStep={step} className="mb-10" />
+
+          <div className="space-y-1.5 mb-6">
+            <p className="text-xs font-medium uppercase tracking-wide text-primary-600">Step {step} of 4</p>
+          </div>
+
+          {step === 1 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Project Information</CardTitle>
+                <CardDescription>Basic details to identify this project.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div>
+                  <FieldLabel htmlFor="project-name">Project Name</FieldLabel>
+                  <Input
+                    id="project-name"
+                    placeholder="e.g. Riverside Office Complex — Electrical Package"
+                    value={projectInfo.name}
+                    onChange={(e) => setProjectInfo((p) => ({ ...p, name: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <FieldLabel htmlFor="project-client">Client</FieldLabel>
+                  <Input
+                    id="project-client"
+                    placeholder="e.g. Riverside Development Ltd."
+                    value={projectInfo.client}
+                    onChange={(e) => setProjectInfo((p) => ({ ...p, client: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <FieldLabel htmlFor="project-description" optional>
+                    Description
+                  </FieldLabel>
+                  <Textarea
+                    id="project-description"
+                    rows={4}
+                    placeholder="Add context for this project"
+                    value={projectInfo.description}
+                    onChange={(e) => setProjectInfo((p) => ({ ...p, description: e.target.value }))}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {step === 2 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Reference Documents</CardTitle>
+                <CardDescription>
+                  Upload the client&apos;s BOQ, Bill of Quantities, Technical Specification or Scope of Work.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!referenceDoc ? (
+                  <FileUpload
+                    accept=".xlsx,.xls,.pdf"
+                    label="Drag & drop the reference document, or click to browse"
+                    hint="Supports Excel and PDF"
+                    onFilesSelected={handleReferenceFiles}
+                  />
+                ) : (
+                  <UploadedFileCard upload={referenceDoc} onRemove={() => setReferenceDoc(null)} />
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {step === 3 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Supplier Quotes</CardTitle>
+                <CardDescription>
+                  Add each supplier&apos;s quote so BidGuard can compare them against the reference document.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {suppliers.map((supplier, index) => (
+                  <div key={supplier.id} className="rounded-lg border border-gray-200 bg-gray-50/40 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                        Supplier {index + 1}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => removeSupplier(supplier.id)}
+                        aria-label={`Remove supplier ${index + 1}`}
+                        className="rounded-md p-1 text-gray-400 transition-colors duration-150 ease-out hover:bg-gray-100 hover:text-danger-600"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <FieldLabel htmlFor={`supplier-name-${supplier.id}`}>Supplier Name</FieldLabel>
+                        <Input
+                          id={`supplier-name-${supplier.id}`}
+                          placeholder="e.g. UAB Elektromontas"
+                          value={supplier.name}
+                          onChange={(e) => renameSupplier(supplier.id, e.target.value)}
+                        />
+                      </div>
+                      {!supplier.upload ? (
+                        <FileUpload
+                          accept=".xlsx,.xls,.pdf"
+                          label="Upload quote (Excel or PDF)"
+                          onFilesSelected={(files) => handleSupplierFiles(supplier.id, files)}
+                        />
+                      ) : (
+                        <UploadedFileCard upload={supplier.upload} onRemove={() => clearSupplierUpload(supplier.id)} />
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={addSupplier}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-200 py-3 text-sm font-medium text-gray-500 transition-colors duration-150 ease-out hover:border-primary-400 hover:bg-primary-50/40 hover:text-primary-600"
+                >
+                  <Plus size={16} />
+                  Add Supplier
+                </button>
+              </CardContent>
+            </Card>
+          )}
+
+          {step === 4 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Review</CardTitle>
+                <CardDescription>Confirm the documents before BidGuard analyzes this project.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {suppliers.some(
+                  (s) =>
+                    referenceRows !== null && s.upload?.rowCount !== null && (s.upload?.rowCount ?? 0) < referenceRows
+                ) && (
+                  <Alert variant="warning" title="Some quotes have fewer line items than the reference document">
+                    This may indicate missing scope. Review the flagged suppliers below before analyzing.
+                  </Alert>
+                )}
+
+                <Table>
+                  <TableHeader>
+                    <TableRow hover={false}>
+                      <TableHeadCell>Document</TableHeadCell>
+                      <TableHeadCell>File</TableHeadCell>
+                      <TableHeadCell>Type</TableHeadCell>
+                      <TableHeadCell>Detected Rows</TableHeadCell>
+                      <TableHeadCell>Status</TableHeadCell>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {referenceDoc && (
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-900">Reference Document</TableCell>
+                        <TableCell className="max-w-[200px] truncate">{referenceDoc.fileName}</TableCell>
+                        <TableCell>
+                          <Badge variant="neutral">{fileTypeLabel(referenceDoc.fileType)}</Badge>
+                        </TableCell>
+                        <TableCell>{referenceDoc.rowCount ?? '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant="success">Baseline</Badge>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {suppliers.map((supplier) => {
+                      const rows = supplier.upload?.rowCount ?? null;
+                      const isLower = referenceRows !== null && rows !== null && rows < referenceRows;
+                      return (
+                        <TableRow key={supplier.id}>
+                          <TableCell className="font-medium text-gray-900">{supplier.name}</TableCell>
+                          <TableCell className="max-w-[200px] truncate">{supplier.upload?.fileName ?? '—'}</TableCell>
+                          <TableCell>
+                            {supplier.upload && <Badge variant="neutral">{fileTypeLabel(supplier.upload.fileType)}</Badge>}
+                          </TableCell>
+                          <TableCell>{rows ?? '—'}</TableCell>
+                          <TableCell>
+                            {isLower ? (
+                              <Badge variant="warning">
+                                <AlertTriangle size={11} />
+                                Fewer rows than reference
+                              </Badge>
+                            ) : (
+                              <Badge variant="success">
+                                <Check size={11} />
+                                Matches expected scope
+                              </Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </main>
+
+      <footer className="sticky bottom-0 border-t border-gray-100 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
+          {step === 1 ? (
+            <Link href="/">
+              <Button variant="ghost">Cancel</Button>
+            </Link>
+          ) : (
+            <Button variant="secondary" onClick={goBack}>
+              <ArrowLeft size={15} />
+              Back
+            </Button>
+          )}
+
+          {step < 4 ? (
+            <Button onClick={goNext} disabled={!canContinue}>
+              Continue
+            </Button>
+          ) : (
+            <Button onClick={handleAnalyze} isLoading={analyzing} disabled={!step2Valid || !step3Valid}>
+              Analyze Project
+            </Button>
+          )}
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+export default NewProjectWizard;
