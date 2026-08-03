@@ -1,7 +1,7 @@
 import type { HTMLAttributes } from 'react';
 import { cn } from '@/lib/utils/cn';
 
-export type CardVariant = 'default' | 'hover' | 'selected' | 'danger' | 'success';
+export type CardVariant = 'default' | 'hover' | 'selected' | 'danger' | 'warning' | 'success';
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   variant?: CardVariant;
@@ -12,6 +12,7 @@ const variantStyles: Record<CardVariant, string> = {
   hover: 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md cursor-pointer',
   selected: 'border-primary-500 bg-primary-50/40 ring-1 ring-primary-500',
   danger: 'border-danger-200 bg-danger-50/40',
+  warning: 'border-warning-200 bg-warning-50/40',
   success: 'border-success-200 bg-success-50/40',
 };
 
