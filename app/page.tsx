@@ -1,4 +1,4 @@
-import BidGuard from '@/components/BidGuard';
+import BidGuard from '@/components/features/BidGuard';
 
 export default function Home() {
   return <BidGuard />;
