@@ -12,6 +12,7 @@ import {
   Loader2,
   Plus,
   ShieldCheck,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -107,7 +108,38 @@ function fileTypeLabel(fileType: DetectedFileType): string {
   return 'File';
 }
 
-function UploadedFileCard({ upload, onRemove }: { upload: UploadedFile; onRemove: () => void }) {
+type ResolvedStatus = 'ready' | 'warning';
+
+/** Compares a successfully-read file's row count against a reference count (when one is known). */
+function resolveFileStatus(upload: UploadedFile, compareRows?: number | null): ResolvedStatus {
+  if (compareRows != null && upload.rowCount != null && upload.rowCount < compareRows) return 'warning';
+  return 'ready';
+}
+
+function FileStatusBadge({ status }: { status: ResolvedStatus }) {
+  if (status === 'warning') {
+    return (
+      <Badge variant="warning">
+        <AlertTriangle size={11} /> Warning
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="success">
+      <Check size={11} /> Ready
+    </Badge>
+  );
+}
+
+function UploadedFileCard({
+  upload,
+  onRemove,
+  compareRows = null,
+}: {
+  upload: UploadedFile;
+  onRemove: () => void;
+  compareRows?: number | null;
+}) {
   if (upload.status === 'reading') {
     return (
       <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
@@ -123,24 +155,36 @@ function UploadedFileCard({ upload, onRemove }: { upload: UploadedFile; onRemove
 
   if (upload.status === 'error') {
     return (
-      <Alert variant="error" title={upload.fileName} onClose={onRemove}>
-        {upload.error ?? 'This file could not be read.'}
+      <Alert variant="error" onClose={onRemove}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium">{upload.fileName}</span>
+          <Badge variant="danger">Error</Badge>
+        </div>
+        <p className="mt-0.5">{upload.error ?? 'This file could not be read.'}</p>
       </Alert>
     );
   }
+
+  const status = resolveFileStatus(upload, compareRows);
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
       <FileTypeIcon fileType={upload.fileType} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-gray-900">{upload.fileName}</p>
-        <div className="mt-1 flex items-center gap-2">
+        <div className="mt-1 flex flex-wrap items-center gap-2">
           <Badge variant="neutral">{fileTypeLabel(upload.fileType)}</Badge>
           <span className="text-xs text-gray-500">
             {upload.rowCount !== null ? `${upload.rowCount.toLocaleString('en-US')} rows detected` : 'Rows confirmed during analysis'}
           </span>
         </div>
+        {status === 'warning' && compareRows != null && (
+          <p className="mt-1 text-xs text-warning-700">
+            Fewer rows than the reference document ({compareRows.toLocaleString('en-US')}).
+          </p>
+        )}
       </div>
+      <FileStatusBadge status={status} />
       <button
         type="button"
         onClick={onRemove}
@@ -152,6 +196,25 @@ function UploadedFileCard({ upload, onRemove }: { upload: UploadedFile; onRemove
     </div>
   );
 }
+
+const DEMO_PROJECT_INFO: ProjectInfo = {
+  name: 'Riverside Office Complex — Electrical Package',
+  client: 'Riverside Development Ltd.',
+  description: 'Full electrical fit-out for the 6-floor office building.',
+};
+
+const DEMO_REFERENCE_DOC: UploadedFile = {
+  fileName: 'reference-boq.xlsx',
+  status: 'success',
+  fileType: 'xlsx',
+  rowCount: 41,
+};
+
+const DEMO_SUPPLIERS: Array<{ name: string; upload: UploadedFile }> = [
+  { name: 'UAB Elektromontas', upload: { fileName: 'supplier-a-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 41 } },
+  { name: 'MB Voltas Baltic', upload: { fileName: 'supplier-b-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 23 } },
+  { name: 'UAB Srovė ir Ko', upload: { fileName: 'supplier-c-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 44 } },
+];
 
 export function NewProjectWizard() {
   const [step, setStep] = useState(1);
@@ -195,6 +258,13 @@ export function NewProjectWizard() {
     );
     const result = await readUpload(file);
     setSuppliers((prev) => prev.map((s) => (s.id === supplierId ? { ...s, upload: result } : s)));
+  };
+
+  const loadDemoProject = () => {
+    setProjectInfo(DEMO_PROJECT_INFO);
+    setReferenceDoc(DEMO_REFERENCE_DOC);
+    setSuppliers(DEMO_SUPPLIERS.map((s) => ({ id: uid(), ...s })));
+    setStep(4);
   };
 
   const addSupplier = () => setSuppliers((prev) => [...prev, { id: uid(), name: '', upload: null }]);
@@ -260,48 +330,61 @@ export function NewProjectWizard() {
           <Stepper steps={STEPS} currentStep={step} className="mb-10" />
 
           <div className="space-y-1.5 mb-6">
-            <p className="text-xs font-medium uppercase tracking-wide text-primary-600">Step {step} of 4</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-primary-600">
+              Step {step} of 4 · {STEPS[step - 1].label}
+            </p>
           </div>
 
           {step === 1 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Project Information</CardTitle>
-                <CardDescription>Basic details to identify this project.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <div>
-                  <FieldLabel htmlFor="project-name">Project Name</FieldLabel>
-                  <Input
-                    id="project-name"
-                    placeholder="e.g. Riverside Office Complex — Electrical Package"
-                    value={projectInfo.name}
-                    onChange={(e) => setProjectInfo((p) => ({ ...p, name: e.target.value }))}
-                  />
+            <>
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles size={16} className="shrink-0 text-primary-600" aria-hidden />
+                  <p className="text-sm text-gray-600">See how BidGuard works with a real example.</p>
                 </div>
-                <div>
-                  <FieldLabel htmlFor="project-client">Client</FieldLabel>
-                  <Input
-                    id="project-client"
-                    placeholder="e.g. Riverside Development Ltd."
-                    value={projectInfo.client}
-                    onChange={(e) => setProjectInfo((p) => ({ ...p, client: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <FieldLabel htmlFor="project-description" optional>
-                    Description
-                  </FieldLabel>
-                  <Textarea
-                    id="project-description"
-                    rows={4}
-                    placeholder="Add context for this project"
-                    value={projectInfo.description}
-                    onChange={(e) => setProjectInfo((p) => ({ ...p, description: e.target.value }))}
-                  />
-                </div>
-              </CardContent>
-            </Card>
+                <Button variant="secondary" size="sm" onClick={loadDemoProject}>
+                  Try Demo Project
+                </Button>
+              </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Project Information</CardTitle>
+                  <CardDescription>Basic details to identify this project.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div>
+                    <FieldLabel htmlFor="project-name">Project Name</FieldLabel>
+                    <Input
+                      id="project-name"
+                      placeholder="e.g. Riverside Office Complex — Electrical Package"
+                      value={projectInfo.name}
+                      onChange={(e) => setProjectInfo((p) => ({ ...p, name: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="project-client">Client</FieldLabel>
+                    <Input
+                      id="project-client"
+                      placeholder="e.g. Riverside Development Ltd."
+                      value={projectInfo.client}
+                      onChange={(e) => setProjectInfo((p) => ({ ...p, client: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="project-description" optional>
+                      Description
+                    </FieldLabel>
+                    <Textarea
+                      id="project-description"
+                      rows={4}
+                      placeholder="Add context for this project"
+                      value={projectInfo.description}
+                      onChange={(e) => setProjectInfo((p) => ({ ...p, description: e.target.value }))}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </>
           )}
 
           {step === 2 && (
@@ -365,10 +448,15 @@ export function NewProjectWizard() {
                         <FileUpload
                           accept=".xlsx,.xls,.pdf"
                           label="Upload quote (Excel or PDF)"
+                          hint="Supports Excel and PDF"
                           onFilesSelected={(files) => handleSupplierFiles(supplier.id, files)}
                         />
                       ) : (
-                        <UploadedFileCard upload={supplier.upload} onRemove={() => clearSupplierUpload(supplier.id)} />
+                        <UploadedFileCard
+                          upload={supplier.upload}
+                          onRemove={() => clearSupplierUpload(supplier.id)}
+                          compareRows={referenceDoc?.rowCount ?? null}
+                        />
                       )}
                     </div>
                   </div>
@@ -422,7 +510,7 @@ export function NewProjectWizard() {
                         </TableCell>
                         <TableCell>{referenceDoc.rowCount ?? '—'}</TableCell>
                         <TableCell>
-                          <Badge variant="success">Baseline</Badge>
+                          <Badge variant="neutral">Baseline</Badge>
                         </TableCell>
                       </TableRow>
                     )}
@@ -441,12 +529,12 @@ export function NewProjectWizard() {
                             {isLower ? (
                               <Badge variant="warning">
                                 <AlertTriangle size={11} />
-                                Fewer rows than reference
+                                Warning
                               </Badge>
                             ) : (
                               <Badge variant="success">
                                 <Check size={11} />
-                                Matches expected scope
+                                Ready
                               </Badge>
                             )}
                           </TableCell>
