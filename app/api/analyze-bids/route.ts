@@ -3,11 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 // Promptas ir API raktas gyvena TIK čia – frontend (components/BidGuard.tsx)
 // jų niekada nemato ir negali pavogti per naršyklės tinklo skirtuką.
 
-interface AnthropicContentBlock {
-  type: string;
-  text?: string;
-}
-
 function buildPrompt(bids: unknown): string {
   return `Tu esi patyręs statybos sąmatininkas su 20+ metų patirtimi, peržiūrintis subrangovų pasiūlymus tam pačiam darbų paketui. Tavo darbas – rasti riziką, kurios nepatyręs projekto vadovas gali nepastebėti. Nesitenkink kainų sulyginimu – pigiausias pasiūlymas dažnai yra rizikingiausias.
 
@@ -48,31 +43,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Reikia bent 2 pasiūlymų.' }, { status: 400 });
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.DEEPSEEK_API_KEY) {
     return NextResponse.json(
-      { error: 'Serveryje nesukonfigūruotas ANTHROPIC_API_KEY.' },
+      { error: 'Serveryje nesukonfigūruotas DEEPSEEK_API_KEY.' },
       { status: 500 }
     );
   }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
+        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'deepseek-chat',
         max_tokens: 4000,
         messages: [{ role: 'user', content: buildPrompt(bids) }],
+        response_format: { type: 'json_object' },
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error('Anthropic API klaida:', errText);
+      console.error('DeepSeek API klaida:', errText);
       return NextResponse.json(
         { error: 'AI analizės paslauga laikinai nepasiekiama.' },
         { status: 502 }
@@ -80,10 +75,7 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await response.json();
-    const text = ((data.content || []) as AnthropicContentBlock[])
-      .filter((c) => c.type === 'text')
-      .map((c) => c.text || '')
-      .join('\n');
+    const text = (data?.choices?.[0]?.message?.content ?? '') as string;
     const clean = text.replace(/```json|```/g, '').trim();
 
     let parsed: unknown;

@@ -2,14 +2,14 @@
 
 Subrangovų pasiūlymų rizikos analizė – ne kainų palyginimas, o atsakymas į „kuris pasiūlymas realiai rizikingas".
 
-Next.js 15 (App Router) + TypeScript + Tailwind. AI analizė ir promptas gyvena serverio pusėje (`app/api/analyze-bids/route.ts`), niekada naršyklėje.
+Next.js 15 (App Router) + TypeScript + Tailwind. AI analizė ir promptas gyvena serverio pusėje (`app/api/analyze-bids/route.ts`), niekada naršyklėje. Analizei naudojamas DeepSeek API.
 
 ## Struktūra
 
 ```
 bidguard/
 ├── app/
-│   ├── api/analyze-bids/route.ts   # backend – promptas + Anthropic raktas
+│   ├── api/analyze-bids/route.ts   # backend – promptas + DeepSeek raktas
 │   ├── layout.tsx
 │   ├── page.tsx
 │   └── globals.css
@@ -29,7 +29,7 @@ bidguard/
 ```bash
 npm install
 cp .env.example .env.local
-# .env.local į ANTHROPIC_API_KEY įrašyk savo raktą iš console.anthropic.com
+# .env.local į DEEPSEEK_API_KEY įrašyk savo raktą iš platform.deepseek.com
 npm run dev
 ```
 
@@ -39,7 +39,7 @@ Atidaryk `http://localhost:3000`.
 
 1. Įkelk šį projektą į GitHub repozitoriją.
 2. [vercel.com](https://vercel.com) → "Add New" → "Project" → pasirink repozitoriją.
-3. "Environment Variables" → pridėk `ANTHROPIC_API_KEY`.
+3. "Environment Variables" → pridėk `DEEPSEEK_API_KEY`.
 4. "Deploy".
 
 ## Žinomos V1 ribos (sąmoningos, ne pamirštos)
