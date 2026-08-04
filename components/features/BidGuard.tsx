@@ -7,12 +7,20 @@ import {
   Trash2,
   AlertTriangle,
   AlertCircle,
+  Award,
+  Clock,
+  Copy,
+  Download,
+  FileWarning,
+  Flag as FlagIcon,
+  Mail,
+  MessageCircle,
+  Printer,
+  Quote,
   ShieldCheck,
   ShieldAlert,
-  Loader2,
   Sparkles,
-  ChevronDown,
-  ChevronUp,
+  TrendingUp,
 } from 'lucide-react';
 
 import {
@@ -27,6 +35,11 @@ import {
   FileUpload,
   Heading,
   Input,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
   Table,
   TableBody,
   TableCell,
@@ -46,6 +59,8 @@ import type {
   BidItem,
   Analysis,
   FlagFeedback,
+  FlagFeedbackEntry,
+  FlagType,
   SavedProject,
   PendingImport,
   ImportTemplate,
@@ -122,22 +137,134 @@ function riskTier(score: number): { label: string; variant: BadgeVariant; tileCl
   };
 }
 
-const FLAG_LABELS: Record<string, string> = {
-  price_outlier: 'Kainos išskirtis',
-  scope_gap: 'Apimties spraga',
-  risky_language: 'Rizikinga formuluotė',
-  unique_exclusion: 'Unikali išimtis',
+const FLAG_TITLES: Record<FlagType, string> = {
+  price_outlier: 'Price Outlier',
+  scope_gap: 'Missing Scope',
+  risky_language: 'Risky Wording',
+  unique_exclusion: 'Qualification Issue',
 };
 
-const SEVERITY_CARD_VARIANT: Record<Severity, CardVariant> = { high: 'danger', medium: 'warning', low: 'success' };
-const SEVERITY_ICON_CLASS: Record<Severity, string> = {
-  high: 'text-danger-500',
-  medium: 'text-warning-500',
-  low: 'text-success-500',
+const RECOMMENDATION_BY_TYPE: Record<FlagType, string> = {
+  scope_gap:
+    "Ask the supplier to confirm and price this scope item before award, or exclude it from all bids for a fair comparison.",
+  price_outlier: "Verify this line item's scope and pricing assumptions with the supplier before relying on the total price.",
+  risky_language: 'Request the supplier remove or clarify this qualification in writing before signing.',
+  unique_exclusion: 'Confirm whether this exclusion is standard practice or specific to this bid, and account for it in the total cost.',
 };
+
+const SEVERITY_LABEL: Record<Severity, string> = { high: 'High', medium: 'Medium', low: 'Low' };
+const SEVERITY_CARD_VARIANT: Record<Severity, CardVariant> = { high: 'danger', medium: 'warning', low: 'success' };
+const SEVERITY_BADGE_VARIANT: Record<Severity, BadgeVariant> = { high: 'danger', medium: 'warning', low: 'success' };
+
+type DetailTabKey = 'missingScope' | 'priceAnomalies' | 'riskyWording' | 'qualificationIssues' | 'duplicateItems' | 'generalComments';
+
+const DETAIL_TABS: { key: DetailTabKey; label: string; icon: typeof AlertTriangle }[] = [
+  { key: 'missingScope', label: 'Missing Scope', icon: AlertTriangle },
+  { key: 'priceAnomalies', label: 'Price Anomalies', icon: TrendingUp },
+  { key: 'riskyWording', label: 'Risky Wording', icon: Quote },
+  { key: 'qualificationIssues', label: 'Qualification Issues', icon: FileWarning },
+  { key: 'duplicateItems', label: 'Duplicate Items', icon: Copy },
+  { key: 'generalComments', label: 'General Comments', icon: MessageCircle },
+];
+
+const TAB_TO_FLAG_TYPE: Partial<Record<DetailTabKey, FlagType>> = {
+  missingScope: 'scope_gap',
+  priceAnomalies: 'price_outlier',
+  riskyWording: 'risky_language',
+  qualificationIssues: 'unique_exclusion',
+};
+
+interface DuplicateItem {
+  desc: string;
+  count: number;
+}
+
+function findDuplicateItems(bid: Bid): DuplicateItem[] {
+  const counts = new Map<string, DuplicateItem>();
+  for (const item of bid.items) {
+    const key = item.desc.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!key) continue;
+    const existing = counts.get(key);
+    if (existing) existing.count += 1;
+    else counts.set(key, { desc: item.desc.trim(), count: 1 });
+  }
+  return [...counts.values()].filter((d) => d.count > 1);
+}
 
 const selectClass =
   'h-9 w-full rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-900 transition-colors duration-150 ease-out hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500';
+
+function RiskItemCard({
+  title,
+  severity,
+  reason,
+  recommendation,
+  feedback,
+  onAgree,
+  onFalsePositive,
+  onComment,
+}: {
+  title: string;
+  severity: Severity;
+  reason: string;
+  recommendation: string;
+  feedback?: FlagFeedbackEntry;
+  onAgree?: () => void;
+  onFalsePositive?: () => void;
+  onComment?: (value: string) => void;
+}) {
+  return (
+    <Card variant={SEVERITY_CARD_VARIANT[severity]}>
+      <CardContent>
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-gray-900">{title}</p>
+          <Badge variant={SEVERITY_BADGE_VARIANT[severity]}>{SEVERITY_LABEL[severity]}</Badge>
+        </div>
+        <p className="text-sm text-gray-700">{reason}</p>
+        <div className="mt-2.5 rounded-md bg-white/70 px-3 py-2">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Recommendation</p>
+          <p className="mt-0.5 text-xs text-gray-700">{recommendation}</p>
+        </div>
+        {onAgree && onFalsePositive && (
+          <>
+            <div className="mt-2.5 flex items-center gap-2 border-t border-gray-100 pt-2.5">
+              <button
+                onClick={onAgree}
+                className={cn(
+                  'rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors duration-150 ease-out',
+                  feedback?.decision === 'agree'
+                    ? 'border-success-200 bg-success-50 text-success-700'
+                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                )}
+              >
+                Agree
+              </button>
+              <button
+                onClick={onFalsePositive}
+                className={cn(
+                  'rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors duration-150 ease-out',
+                  feedback?.decision === 'false_positive'
+                    ? 'border-danger-200 bg-danger-50 text-danger-700'
+                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                )}
+              >
+                False Positive
+              </button>
+            </div>
+            {feedback?.decision && onComment && (
+              <Input
+                className="mt-2"
+                placeholder="Comment (optional)..."
+                value={feedback.comment || ''}
+                onChange={(e) => onComment(e.target.value)}
+              />
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 type ViewMode = 'analyze' | 'projects' | 'contractors';
 
@@ -147,7 +274,8 @@ export default function BidGuard() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [expandedMatrix, setExpandedMatrix] = useState(false);
+  const [selectedBidId, setSelectedBidId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<DetailTabKey>('missingScope');
   const [projectLabel, setProjectLabel] = useState('');
   const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
@@ -345,11 +473,179 @@ export default function BidGuard() {
     }
   };
 
-  const nameOf = (bidId: string) => bids.find((b) => b.id === bidId)?.name || bidId;
   const flagKey = (f: { bidId: string; tipas: string; aprasymas: string }) =>
     `${f.bidId}::${f.tipas}::${f.aprasymas}`;
 
-  const sortedScores = analysis?.bidScores ? [...analysis.bidScores].sort((a, b) => a.balas - b.balas) : [];
+  // ---------- Results Screen: derived comparison data ----------
+
+  const totalPriceForBid = (bid: Bid) => bid.items.reduce((sum, i) => sum + (Number(i.price) || 0), 0);
+
+  const coverageForBid = (bidId: string) => {
+    const rows = analysis?.scopeMatrix || [];
+    if (rows.length === 0) return { pct: 100, missing: 0, total: 0 };
+    const missing = rows.filter((r) => {
+      const cell = (r.eilutes || []).find((e) => e.bidId === bidId);
+      return !cell || cell.yra === false;
+    }).length;
+    return { pct: Math.round(((rows.length - missing) / rows.length) * 100), missing, total: rows.length };
+  };
+
+  const commercialStatus = (bidId: string): { label: string; variant: BadgeVariant } => {
+    const bidFlags = (analysis?.flags || []).filter((f) => f.bidId === bidId);
+    if (bidFlags.some((f) => f.sunkumas === 'high')) return { label: 'High Risk', variant: 'danger' };
+    if (bidFlags.some((f) => f.sunkumas === 'medium')) return { label: 'Needs Review', variant: 'warning' };
+    return { label: 'Low Risk', variant: 'success' };
+  };
+
+  const comparisonRows = analysis
+    ? bids
+        .map((bid) => ({ bid, score: analysis.bidScores.find((s) => s.bidId === bid.id) ?? null }))
+        .sort((a, b) => (b.score?.balas ?? -1) - (a.score?.balas ?? -1))
+    : [];
+
+  const recommended = comparisonRows[0] ?? null;
+  const riskiest =
+    comparisonRows.length > 0
+      ? [...comparisonRows].sort((a, b) => (a.score?.balas ?? 999) - (b.score?.balas ?? 999))[0]
+      : null;
+  const recommendedTier = recommended?.score ? riskTier(recommended.score.balas) : null;
+
+  const scopeGapCount = (analysis?.flags || []).filter((f) => f.tipas === 'scope_gap').length;
+  const priceOutlierCount = (analysis?.flags || []).filter((f) => f.tipas === 'price_outlier').length;
+  const highRiskFlagCount = (analysis?.flags || []).filter((f) => f.sunkumas === 'high').length;
+  const estimatedHoursSaved = analysis
+    ? Math.max(1, Math.round(((analysis.scopeMatrix?.length || 0) * Math.max(bids.length, 1) * 2) / 60))
+    : 0;
+
+  const selectedBid = selectedBidId ? bids.find((b) => b.id === selectedBidId) || null : null;
+  const selectedScore = selectedBidId ? analysis?.bidScores.find((s) => s.bidId === selectedBidId) || null : null;
+  const selectedFlags = selectedBidId ? (analysis?.flags || []).filter((f) => f.bidId === selectedBidId) : [];
+
+  const openSupplierDetail = (bidId: string) => {
+    setSelectedBidId(bidId);
+    setDetailTab('missingScope');
+  };
+
+  const handleExportExcel = () => {
+    if (!analysis) return;
+    const rows = bids.map((b) => {
+      const score = analysis.bidScores.find((s) => s.bidId === b.id);
+      const cov = coverageForBid(b.id);
+      const status = commercialStatus(b.id);
+      return {
+        Supplier: b.name || '—',
+        'Total Price (€)': totalPriceForBid(b),
+        'Coverage %': cov.pct,
+        'Detected Rows': b.items.length,
+        'Risk Score': score?.balas ?? '',
+        'Missing Items': cov.missing,
+        'Commercial Status': status.label,
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Comparison');
+    XLSX.writeFile(wb, `bidguard-comparison-${Date.now()}.xlsx`);
+  };
+
+  const handleGeneratePdf = () => window.print();
+
+  const handleGenerateClarificationEmail = (bidId: string) => {
+    const bid = bids.find((b) => b.id === bidId);
+    if (!bid || !analysis) return;
+    const bidFlags = analysis.flags.filter((f) => f.bidId === bidId);
+    const subject = `Clarification requested — ${bid.name || 'Supplier'}`;
+    const lines = [
+      `Hi ${bid.name || 'team'},`,
+      '',
+      "While reviewing your quotation, we'd like clarification on the following points before proceeding:",
+      '',
+      ...(bidFlags.length > 0
+        ? bidFlags.map((f, i) => `${i + 1}. [${FLAG_TITLES[f.tipas]}] ${f.aprasymas}`)
+        : ['No open items — thank you for a complete submission.']),
+      '',
+      'Could you confirm or clarify the above at your earliest convenience?',
+      '',
+      'Thank you,',
+    ];
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`;
+  };
+
+  const renderDetailTabContent = () => {
+    if (!selectedBid) return null;
+
+    if (detailTab === 'duplicateItems') {
+      const dupes = findDuplicateItems(selectedBid);
+      if (dupes.length === 0) return <EmptyState title="No duplicate line items detected" />;
+      return (
+        <div className="space-y-3">
+          {dupes.map((d, i) => (
+            <RiskItemCard
+              key={i}
+              title="Duplicate Line Item"
+              severity="medium"
+              reason={`"${d.desc}" appears ${d.count} times in this bid.`}
+              recommendation="Confirm with the supplier whether this is intentional (e.g. separate phases) or a duplicate entry, and adjust the total price if needed."
+            />
+          ))}
+        </div>
+      );
+    }
+
+    if (detailTab === 'generalComments') {
+      const assessment = selectedScore?.pagrindimas?.trim();
+      const notes = selectedBid.exclusions?.trim();
+      if (!assessment && !notes) return <EmptyState title="No additional comments for this supplier" />;
+      return (
+        <div className="space-y-3">
+          {assessment && (
+            <Card>
+              <CardContent>
+                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">Overall Assessment</p>
+                <p className="text-sm text-gray-700">{assessment}</p>
+              </CardContent>
+            </Card>
+          )}
+          {notes && (
+            <Card>
+              <CardContent>
+                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">Supplier-Provided Notes</p>
+                <p className="text-sm text-gray-700">{notes}</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      );
+    }
+
+    const flagType = TAB_TO_FLAG_TYPE[detailTab];
+    const items = flagType ? selectedFlags.filter((f) => f.tipas === flagType) : [];
+    if (items.length === 0) {
+      const tabLabel = DETAIL_TABS.find((t) => t.key === detailTab)?.label.toLowerCase() || 'issues';
+      return <EmptyState title={`No ${tabLabel} detected`} />;
+    }
+    return (
+      <div className="space-y-3">
+        {items.map((f, i) => {
+          const key = flagKey(f);
+          const fb = flagFeedback[key];
+          return (
+            <RiskItemCard
+              key={i}
+              title={FLAG_TITLES[f.tipas]}
+              severity={f.sunkumas}
+              reason={f.aprasymas}
+              recommendation={RECOMMENDATION_BY_TYPE[f.tipas]}
+              feedback={fb}
+              onAgree={() => setFlagFeedback((s) => ({ ...s, [key]: { ...s[key], decision: 'agree' } }))}
+              onFalsePositive={() => setFlagFeedback((s) => ({ ...s, [key]: { ...s[key], decision: 'false_positive' } }))}
+              onComment={(v) => setFlagFeedback((s) => ({ ...s, [key]: { ...s[key], comment: v } }))}
+            />
+          );
+        })}
+      </div>
+    );
+  };
 
   // ---------- Projektų / rangovų istorija ----------
 
@@ -444,7 +740,7 @@ export default function BidGuard() {
         </div>
       </header>
 
-      <nav className="border-b border-gray-200 bg-white">
+      <nav className="border-b border-gray-200 bg-white print:hidden">
         <div className="mx-auto flex max-w-5xl gap-1 px-5 sm:px-10">
           {([
             { key: 'analyze', label: 'Nauja analizė' },
@@ -470,7 +766,7 @@ export default function BidGuard() {
       <main className="mx-auto max-w-5xl space-y-6 px-5 pt-8 sm:px-10">
         {view === 'analyze' && (
           <>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 print:hidden">
               <Button variant="secondary" size="sm" onClick={loadSample}>
                 <Sparkles size={14} /> Įkelti pavyzdį
               </Button>
@@ -479,7 +775,7 @@ export default function BidGuard() {
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 print:hidden">
               {bids.map((bid, idx) => (
                 <Card key={bid.id} className="flex flex-col">
                   <CardContent className="flex flex-1 flex-col">
@@ -666,7 +962,7 @@ export default function BidGuard() {
               </button>
             </div>
 
-            <div className="flex items-center gap-4 pt-2">
+            <div className="flex items-center gap-4 pt-2 print:hidden">
               <Button variant="primary" size="lg" onClick={runAnalysis} disabled={!canAnalyze} isLoading={loading}>
                 {!loading && <ShieldAlert size={20} />}
                 {loading ? 'Analizuojama...' : 'Analizuoti riziką'}
@@ -681,8 +977,65 @@ export default function BidGuard() {
             {error && <Alert variant="error">{error}</Alert>}
 
             {analysis && (
-              <div className="space-y-8 border-t border-gray-100 pt-6">
-                <Card>
+              <div className="space-y-8 border-t border-gray-100 pt-8">
+                <div>
+                  <Heading level={2} className="mb-4">
+                    Executive Summary
+                  </Heading>
+                  <Card>
+                    <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
+                      <div className="p-4">
+                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                          <Award size={11} /> Recommended Supplier
+                        </p>
+                        <p className="truncate text-base font-semibold text-gray-900">{recommended?.bid.name || '—'}</p>
+                        {recommended?.score && recommendedTier && (
+                          <Badge variant={recommendedTier.variant} className="mt-1.5">
+                            {recommended.score.balas}/100
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="p-4">
+                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                          <ShieldAlert size={11} /> Commercial Risk Score
+                        </p>
+                        <p className="text-base font-semibold text-gray-900">
+                          {riskiest?.score?.balas ?? '—'}
+                          <span className="text-xs font-normal text-gray-400">/100</span>
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-gray-500">{riskiest?.bid.name}</p>
+                      </div>
+                      <div className="p-4">
+                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                          <AlertTriangle size={11} /> Missing Scope
+                        </p>
+                        <p className="text-base font-semibold text-gray-900">{scopeGapCount}</p>
+                      </div>
+                      <div className="p-4">
+                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                          <TrendingUp size={11} /> Price Outliers
+                        </p>
+                        <p className="text-base font-semibold text-gray-900">{priceOutlierCount}</p>
+                      </div>
+                      <div className="p-4">
+                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                          <FlagIcon size={11} /> High Risk Flags
+                        </p>
+                        <p className="text-base font-semibold text-gray-900">{highRiskFlagCount}</p>
+                      </div>
+                      <div className="p-4">
+                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                          <Clock size={11} /> Time Saved
+                        </p>
+                        <p className="text-base font-semibold text-gray-900">
+                          ~{estimatedHoursSaved} hr{estimatedHoursSaved === 1 ? '' : 's'}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+
+                <Card className="print:hidden">
                   <CardContent className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-gray-400">Išvada</p>
@@ -704,149 +1057,65 @@ export default function BidGuard() {
 
                 <div>
                   <Heading level={2} className="mb-4">
-                    Kuris pasiūlymas rizikingiausias
+                    Supplier Comparison
                   </Heading>
-                  <div className="space-y-3">
-                    {sortedScores.map((s) => {
-                      const tier = riskTier(s.balas);
-                      const Icon = tier.Icon;
-                      const bidFlags = (analysis.flags || []).filter((f) => f.bidId === s.bidId);
-                      return (
-                        <Card key={s.bidId} variant={s.balas < 45 ? 'danger' : 'default'}>
-                          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-7">
-                            <div className="flex min-w-0 shrink-0 items-center gap-4 sm:w-64">
-                              <div
-                                className={cn(
-                                  'flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border text-3xl font-bold tabular-nums',
-                                  tier.tileClassName
+                  <Table>
+                    <TableHeader>
+                      <TableRow hover={false}>
+                        <TableHeadCell>Supplier</TableHeadCell>
+                        <TableHeadCell>Total Price</TableHeadCell>
+                        <TableHeadCell>Coverage %</TableHeadCell>
+                        <TableHeadCell>Detected Rows</TableHeadCell>
+                        <TableHeadCell>Risk Score</TableHeadCell>
+                        <TableHeadCell>Missing Items</TableHeadCell>
+                        <TableHeadCell>Commercial Status</TableHeadCell>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {comparisonRows.map(({ bid, score }) => {
+                        const cov = coverageForBid(bid.id);
+                        const status = commercialStatus(bid.id);
+                        const isRecommended = recommended?.bid.id === bid.id;
+                        return (
+                          <TableRow
+                            key={bid.id}
+                            onClick={() => openSupplierDetail(bid.id)}
+                            className="cursor-pointer print:cursor-auto"
+                          >
+                            <TableCell className="font-medium text-gray-900">
+                              <span className="flex items-center gap-2">
+                                {bid.name || '—'}
+                                {isRecommended && (
+                                  <Badge variant="success">
+                                    <Award size={10} /> Recommended
+                                  </Badge>
                                 )}
-                              >
-                                {s.balas}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-gray-900">{nameOf(s.bidId)}</p>
-                                <Badge variant={tier.variant} className="mt-1">
-                                  <Icon size={12} /> {tier.label}
-                                </Badge>
-                                <div className="mt-1.5 h-1 w-32 overflow-hidden rounded-full bg-gray-100">
-                                  <div className={cn('h-full rounded-full', tier.barClassName)} style={{ width: `${s.balas}%` }} />
-                                </div>
-                              </div>
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <Text muted>{s.pagrindimas}</Text>
-                              {bidFlags.length > 0 && (
-                                <Text size="caption" muted className="mt-1.5">
-                                  {bidFlags.length} vėliavėlė(s) žemiau
-                                </Text>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div>
-                  <Heading level={2} className="mb-4">
-                    Kas rasta
-                  </Heading>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {(analysis.flags || []).map((f, i) => {
-                      const key = flagKey(f);
-                      const fb = flagFeedback[key];
-                      return (
-                        <Card key={i} variant={SEVERITY_CARD_VARIANT[f.sunkumas]}>
-                          <CardContent>
-                            <div className="mb-1.5 flex items-center justify-between">
-                              <Badge variant="neutral">{FLAG_LABELS[f.tipas] || f.tipas}</Badge>
-                              <AlertTriangle size={13} className={SEVERITY_ICON_CLASS[f.sunkumas]} />
-                            </div>
-                            <p className="mb-1 text-xs font-medium text-gray-500">{nameOf(f.bidId)}</p>
-                            <p className="mb-2.5 text-sm text-gray-900">{f.aprasymas}</p>
-
-                            <div className="flex items-center gap-2 border-t border-gray-100 pt-2">
-                              <button
-                                onClick={() => setFlagFeedback((s) => ({ ...s, [key]: { ...s[key], decision: 'agree' } }))}
-                                className={cn(
-                                  'rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors duration-150 ease-out',
-                                  fb?.decision === 'agree'
-                                    ? 'border-success-200 bg-success-50 text-success-700'
-                                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                                )}
-                              >
-                                Sutinku
-                              </button>
-                              <button
-                                onClick={() =>
-                                  setFlagFeedback((s) => ({ ...s, [key]: { ...s[key], decision: 'false_positive' } }))
-                                }
-                                className={cn(
-                                  'rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors duration-150 ease-out',
-                                  fb?.decision === 'false_positive'
-                                    ? 'border-danger-200 bg-danger-50 text-danger-700'
-                                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                                )}
-                              >
-                                Klaidingas perspėjimas
-                              </button>
-                            </div>
-                            {fb?.decision && (
-                              <Input
-                                className="mt-2"
-                                placeholder="Komentaras (nebūtina)..."
-                                value={fb.comment || ''}
-                                onChange={(e) => setFlagFeedback((s) => ({ ...s, [key]: { ...s[key], comment: e.target.value } }))}
-                              />
-                            )}
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                    {(!analysis.flags || analysis.flags.length === 0) && (
-                      <div className="sm:col-span-2">
-                        <EmptyState title="Rimtų anomalijų nerasta" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <button
-                    onClick={() => setExpandedMatrix((v) => !v)}
-                    className="mb-4 flex w-full items-center gap-2 text-left text-xl font-semibold text-gray-900"
-                  >
-                    Apimties lentelė {expandedMatrix ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                  </button>
-                  {expandedMatrix && (
-                    <Table>
-                      <TableHeader>
-                        <TableRow hover={false}>
-                          <TableHeadCell>Kategorija</TableHeadCell>
-                          {bids.map((b) => (
-                            <TableHeadCell key={b.id}>{b.name || '—'}</TableHeadCell>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(analysis.scopeMatrix || []).map((row, i) => (
-                          <TableRow key={i}>
-                            <TableCell className="font-medium text-gray-900">{row.kategorija}</TableCell>
-                            {bids.map((b) => {
-                              const cell = (row.eilutes || []).find((e) => e.bidId === b.id);
-                              const missing = !cell || cell.yra === false;
-                              return (
-                                <TableCell key={b.id} className={cn('font-mono tabular-nums', missing && 'text-danger-600')}>
-                                  {missing ? 'NĖRA' : `€${Number(cell?.kaina).toLocaleString('lt-LT')}`}
-                                </TableCell>
-                              );
-                            })}
+                              </span>
+                            </TableCell>
+                            <TableCell className="font-mono tabular-nums">
+                              €{totalPriceForBid(bid).toLocaleString('lt-LT')}
+                            </TableCell>
+                            <TableCell className="font-mono tabular-nums">{cov.pct}%</TableCell>
+                            <TableCell className="font-mono tabular-nums">{bid.items.length}</TableCell>
+                            <TableCell className="font-mono tabular-nums">{score?.balas ?? '—'}</TableCell>
+                            <TableCell className="font-mono tabular-nums">{cov.missing}</TableCell>
+                            <TableCell>
+                              <Badge variant={status.variant}>{status.label}</Badge>
+                            </TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="flex flex-wrap gap-2 print:hidden">
+                  <Button variant="secondary" onClick={handleGeneratePdf}>
+                    <Printer size={15} /> Generate Comparison PDF
+                  </Button>
+                  <Button variant="secondary" onClick={handleExportExcel}>
+                    <Download size={15} /> Export Excel
+                  </Button>
                 </div>
               </div>
             )}
@@ -927,6 +1196,52 @@ export default function BidGuard() {
           </div>
         )}
       </main>
+
+      <Modal open={!!selectedBid} onClose={() => setSelectedBidId(null)} size="lg">
+        {selectedBid && (
+          <>
+            <ModalHeader onClose={() => setSelectedBidId(null)}>
+              <ModalTitle>{selectedBid.name || 'Supplier'}</ModalTitle>
+              {selectedScore && (
+                <div className="mt-1.5 flex items-center gap-2">
+                  <Badge variant={riskTier(selectedScore.balas).variant}>
+                    {selectedScore.balas}/100 · {riskTier(selectedScore.balas).label}
+                  </Badge>
+                </div>
+              )}
+            </ModalHeader>
+
+            <div className="flex gap-1 overflow-x-auto border-b border-gray-100 px-5 pt-3">
+              {DETAIL_TABS.map((t) => {
+                const Icon = t.icon;
+                const active = detailTab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setDetailTab(t.key)}
+                    className={cn(
+                      'flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors duration-150 ease-out',
+                      active
+                        ? 'border-primary-600 text-gray-900'
+                        : 'border-transparent text-gray-500 hover:text-gray-800'
+                    )}
+                  >
+                    <Icon size={13} /> {t.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <ModalBody className="max-h-[55vh] overflow-y-auto">{renderDetailTabContent()}</ModalBody>
+
+            <ModalFooter>
+              <Button variant="primary" onClick={() => handleGenerateClarificationEmail(selectedBid.id)}>
+                <Mail size={15} /> Generate Clarification Email
+              </Button>
+            </ModalFooter>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }
