@@ -138,33 +138,33 @@ function riskTier(score: number): { label: string; variant: BadgeVariant; tileCl
 }
 
 const FLAG_TITLES: Record<FlagType, string> = {
-  price_outlier: 'Price Outlier',
-  scope_gap: 'Missing Scope',
-  risky_language: 'Risky Wording',
-  unique_exclusion: 'Qualification Issue',
+  price_outlier: 'Kainos išskirtis',
+  scope_gap: 'Apimties spraga',
+  risky_language: 'Rizikinga formuluotė',
+  unique_exclusion: 'Unikali išimtis',
 };
 
 const RECOMMENDATION_BY_TYPE: Record<FlagType, string> = {
   scope_gap:
-    "Ask the supplier to confirm and price this scope item before award, or exclude it from all bids for a fair comparison.",
-  price_outlier: "Verify this line item's scope and pricing assumptions with the supplier before relying on the total price.",
-  risky_language: 'Request the supplier remove or clarify this qualification in writing before signing.',
-  unique_exclusion: 'Confirm whether this exclusion is standard practice or specific to this bid, and account for it in the total cost.',
+    'Paprašyk rangovo patvirtinti ir įkainoti šią apimties dalį prieš skiriant darbus, arba aiškiai ją išbrauk iš visų pasiūlymų sąžiningam palyginimui.',
+  price_outlier: 'Prieš remiantis bendra kaina, patikrink šios eilutės apimtį ir kainodaros prielaidas su rangovu.',
+  risky_language: 'Paprašyk rangovo raštu pašalinti arba patikslinti šią sąlygą prieš pasirašant sutartį.',
+  unique_exclusion: 'Patikrink, ar ši išimtis yra standartinė praktika, ar būdinga tik šiam pasiūlymui, ir įvertink jos poveikį bendrai kainai.',
 };
 
-const SEVERITY_LABEL: Record<Severity, string> = { high: 'High', medium: 'Medium', low: 'Low' };
+const SEVERITY_LABEL: Record<Severity, string> = { high: 'Aukšta', medium: 'Vidutinė', low: 'Žema' };
 const SEVERITY_CARD_VARIANT: Record<Severity, CardVariant> = { high: 'danger', medium: 'warning', low: 'success' };
 const SEVERITY_BADGE_VARIANT: Record<Severity, BadgeVariant> = { high: 'danger', medium: 'warning', low: 'success' };
 
 type DetailTabKey = 'missingScope' | 'priceAnomalies' | 'riskyWording' | 'qualificationIssues' | 'duplicateItems' | 'generalComments';
 
 const DETAIL_TABS: { key: DetailTabKey; label: string; icon: typeof AlertTriangle }[] = [
-  { key: 'missingScope', label: 'Missing Scope', icon: AlertTriangle },
-  { key: 'priceAnomalies', label: 'Price Anomalies', icon: TrendingUp },
-  { key: 'riskyWording', label: 'Risky Wording', icon: Quote },
-  { key: 'qualificationIssues', label: 'Qualification Issues', icon: FileWarning },
-  { key: 'duplicateItems', label: 'Duplicate Items', icon: Copy },
-  { key: 'generalComments', label: 'General Comments', icon: MessageCircle },
+  { key: 'missingScope', label: 'Trūkstama apimtis', icon: AlertTriangle },
+  { key: 'priceAnomalies', label: 'Kainų anomalijos', icon: TrendingUp },
+  { key: 'riskyWording', label: 'Rizikingos formuluotės', icon: Quote },
+  { key: 'qualificationIssues', label: 'Kvalifikacijos išlygos', icon: FileWarning },
+  { key: 'duplicateItems', label: 'Pasikartojančios eilutės', icon: Copy },
+  { key: 'generalComments', label: 'Bendri komentarai', icon: MessageCircle },
 ];
 
 const TAB_TO_FLAG_TYPE: Partial<Record<DetailTabKey, FlagType>> = {
@@ -172,6 +172,13 @@ const TAB_TO_FLAG_TYPE: Partial<Record<DetailTabKey, FlagType>> = {
   priceAnomalies: 'price_outlier',
   riskyWording: 'risky_language',
   qualificationIssues: 'unique_exclusion',
+};
+
+const EMPTY_TAB_MESSAGE: Partial<Record<DetailTabKey, string>> = {
+  missingScope: 'Trūkstamos apimties nerasta',
+  priceAnomalies: 'Kainų anomalijų nerasta',
+  riskyWording: 'Rizikingų formuluočių nerasta',
+  qualificationIssues: 'Kvalifikacijos išlygų nerasta',
 };
 
 interface DuplicateItem {
@@ -222,7 +229,7 @@ function RiskItemCard({
         </div>
         <p className="text-sm text-gray-700">{reason}</p>
         <div className="mt-2.5 rounded-md bg-white/70 px-3 py-2">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Recommendation</p>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Rekomendacija</p>
           <p className="mt-0.5 text-xs text-gray-700">{recommendation}</p>
         </div>
         {onAgree && onFalsePositive && (
@@ -237,7 +244,7 @@ function RiskItemCard({
                     : 'border-gray-200 text-gray-500 hover:bg-gray-50'
                 )}
               >
-                Agree
+                Sutinku
               </button>
               <button
                 onClick={onFalsePositive}
@@ -248,13 +255,13 @@ function RiskItemCard({
                     : 'border-gray-200 text-gray-500 hover:bg-gray-50'
                 )}
               >
-                False Positive
+                Klaidingas perspėjimas
               </button>
             </div>
             {feedback?.decision && onComment && (
               <Input
                 className="mt-2"
-                placeholder="Comment (optional)..."
+                placeholder="Komentaras (nebūtina)..."
                 value={feedback.comment || ''}
                 onChange={(e) => onComment(e.target.value)}
               />
@@ -492,9 +499,9 @@ export default function BidGuard() {
 
   const commercialStatus = (bidId: string): { label: string; variant: BadgeVariant } => {
     const bidFlags = (analysis?.flags || []).filter((f) => f.bidId === bidId);
-    if (bidFlags.some((f) => f.sunkumas === 'high')) return { label: 'High Risk', variant: 'danger' };
-    if (bidFlags.some((f) => f.sunkumas === 'medium')) return { label: 'Needs Review', variant: 'warning' };
-    return { label: 'Low Risk', variant: 'success' };
+    if (bidFlags.some((f) => f.sunkumas === 'high')) return { label: 'Aukšta rizika', variant: 'danger' };
+    if (bidFlags.some((f) => f.sunkumas === 'medium')) return { label: 'Verta patikrinti', variant: 'warning' };
+    return { label: 'Žema rizika', variant: 'success' };
   };
 
   const comparisonRows = analysis
@@ -533,19 +540,19 @@ export default function BidGuard() {
       const cov = coverageForBid(b.id);
       const status = commercialStatus(b.id);
       return {
-        Supplier: b.name || '—',
-        'Total Price (€)': totalPriceForBid(b),
-        'Coverage %': cov.pct,
-        'Detected Rows': b.items.length,
-        'Risk Score': score?.balas ?? '',
-        'Missing Items': cov.missing,
-        'Commercial Status': status.label,
+        Rangovas: b.name || '—',
+        'Bendra kaina (€)': totalPriceForBid(b),
+        'Apimtis %': cov.pct,
+        'Aptiktos eilutės': b.items.length,
+        'Rizikos balas': score?.balas ?? '',
+        'Trūkstami punktai': cov.missing,
+        'Komercinis statusas': status.label,
       };
     });
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Comparison');
-    XLSX.writeFile(wb, `bidguard-comparison-${Date.now()}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'Palyginimas');
+    XLSX.writeFile(wb, `bidguard-palyginimas-${Date.now()}.xlsx`);
   };
 
   const handleGeneratePdf = () => window.print();
@@ -554,19 +561,19 @@ export default function BidGuard() {
     const bid = bids.find((b) => b.id === bidId);
     if (!bid || !analysis) return;
     const bidFlags = analysis.flags.filter((f) => f.bidId === bidId);
-    const subject = `Clarification requested — ${bid.name || 'Supplier'}`;
+    const subject = `Prašome patikslinti — ${bid.name || 'Rangovas'}`;
     const lines = [
-      `Hi ${bid.name || 'team'},`,
+      'Laba diena,',
       '',
-      "While reviewing your quotation, we'd like clarification on the following points before proceeding:",
+      'Peržiūrėję jūsų pasiūlymą, norėtume patikslinti šiuos punktus prieš tęsdami:',
       '',
       ...(bidFlags.length > 0
         ? bidFlags.map((f, i) => `${i + 1}. [${FLAG_TITLES[f.tipas]}] ${f.aprasymas}`)
-        : ['No open items — thank you for a complete submission.']),
+        : ['Papildomų klausimų nėra — ačiū už išsamų pasiūlymą.']),
       '',
-      'Could you confirm or clarify the above at your earliest convenience?',
+      'Ar galėtumėte patvirtinti ar patikslinti aukščiau nurodytus punktus artimiausiu metu?',
       '',
-      'Thank you,',
+      'Ačiū,',
     ];
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join('\n'))}`;
   };
@@ -576,16 +583,16 @@ export default function BidGuard() {
 
     if (detailTab === 'duplicateItems') {
       const dupes = findDuplicateItems(selectedBid);
-      if (dupes.length === 0) return <EmptyState title="No duplicate line items detected" />;
+      if (dupes.length === 0) return <EmptyState title="Pasikartojančių eilučių nerasta" />;
       return (
         <div className="space-y-3">
           {dupes.map((d, i) => (
             <RiskItemCard
               key={i}
-              title="Duplicate Line Item"
+              title="Pasikartojanti eilutė"
               severity="medium"
-              reason={`"${d.desc}" appears ${d.count} times in this bid.`}
-              recommendation="Confirm with the supplier whether this is intentional (e.g. separate phases) or a duplicate entry, and adjust the total price if needed."
+              reason={`„${d.desc}" pasikartoja ${d.count} kartus šiame pasiūlyme.`}
+              recommendation="Patikrink su rangovu, ar tai sąmoninga (pvz. atskiri etapai), ar dubliuota eilutė, ir prireikus pakoreguok bendrą kainą."
             />
           ))}
         </div>
@@ -595,13 +602,13 @@ export default function BidGuard() {
     if (detailTab === 'generalComments') {
       const assessment = selectedScore?.pagrindimas?.trim();
       const notes = selectedBid.exclusions?.trim();
-      if (!assessment && !notes) return <EmptyState title="No additional comments for this supplier" />;
+      if (!assessment && !notes) return <EmptyState title="Papildomų komentarų šiam rangovui nėra" />;
       return (
         <div className="space-y-3">
           {assessment && (
             <Card>
               <CardContent>
-                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">Overall Assessment</p>
+                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">Bendras įvertinimas</p>
                 <p className="text-sm text-gray-700">{assessment}</p>
               </CardContent>
             </Card>
@@ -609,7 +616,7 @@ export default function BidGuard() {
           {notes && (
             <Card>
               <CardContent>
-                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">Supplier-Provided Notes</p>
+                <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">Rangovo pateiktos pastabos</p>
                 <p className="text-sm text-gray-700">{notes}</p>
               </CardContent>
             </Card>
@@ -621,8 +628,7 @@ export default function BidGuard() {
     const flagType = TAB_TO_FLAG_TYPE[detailTab];
     const items = flagType ? selectedFlags.filter((f) => f.tipas === flagType) : [];
     if (items.length === 0) {
-      const tabLabel = DETAIL_TABS.find((t) => t.key === detailTab)?.label.toLowerCase() || 'issues';
-      return <EmptyState title={`No ${tabLabel} detected`} />;
+      return <EmptyState title={EMPTY_TAB_MESSAGE[detailTab] || 'Nieko nerasta'} />;
     }
     return (
       <div className="space-y-3">
@@ -980,13 +986,13 @@ export default function BidGuard() {
               <div className="space-y-8 border-t border-gray-100 pt-8">
                 <div>
                   <Heading level={2} className="mb-4">
-                    Executive Summary
+                    Rezultatų suvestinė
                   </Heading>
                   <Card>
                     <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
                       <div className="p-4">
                         <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <Award size={11} /> Recommended Supplier
+                          <Award size={11} /> Rekomenduojamas rangovas
                         </p>
                         <p className="truncate text-base font-semibold text-gray-900">{recommended?.bid.name || '—'}</p>
                         {recommended?.score && recommendedTier && (
@@ -997,7 +1003,7 @@ export default function BidGuard() {
                       </div>
                       <div className="p-4">
                         <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <ShieldAlert size={11} /> Commercial Risk Score
+                          <ShieldAlert size={11} /> Komercinės rizikos balas
                         </p>
                         <p className="text-base font-semibold text-gray-900">
                           {riskiest?.score?.balas ?? '—'}
@@ -1007,29 +1013,27 @@ export default function BidGuard() {
                       </div>
                       <div className="p-4">
                         <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <AlertTriangle size={11} /> Missing Scope
+                          <AlertTriangle size={11} /> Trūkstama apimtis
                         </p>
                         <p className="text-base font-semibold text-gray-900">{scopeGapCount}</p>
                       </div>
                       <div className="p-4">
                         <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <TrendingUp size={11} /> Price Outliers
+                          <TrendingUp size={11} /> Kainų išskirtys
                         </p>
                         <p className="text-base font-semibold text-gray-900">{priceOutlierCount}</p>
                       </div>
                       <div className="p-4">
                         <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <FlagIcon size={11} /> High Risk Flags
+                          <FlagIcon size={11} /> Aukštos rizikos vėliavėlės
                         </p>
                         <p className="text-base font-semibold text-gray-900">{highRiskFlagCount}</p>
                       </div>
                       <div className="p-4">
                         <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <Clock size={11} /> Time Saved
+                          <Clock size={11} /> Sutaupytas laikas
                         </p>
-                        <p className="text-base font-semibold text-gray-900">
-                          ~{estimatedHoursSaved} hr{estimatedHoursSaved === 1 ? '' : 's'}
-                        </p>
+                        <p className="text-base font-semibold text-gray-900">~{estimatedHoursSaved} val.</p>
                       </div>
                     </div>
                   </Card>
@@ -1057,18 +1061,18 @@ export default function BidGuard() {
 
                 <div>
                   <Heading level={2} className="mb-4">
-                    Supplier Comparison
+                    Rangovų palyginimas
                   </Heading>
                   <Table>
                     <TableHeader>
                       <TableRow hover={false}>
-                        <TableHeadCell>Supplier</TableHeadCell>
-                        <TableHeadCell>Total Price</TableHeadCell>
-                        <TableHeadCell>Coverage %</TableHeadCell>
-                        <TableHeadCell>Detected Rows</TableHeadCell>
-                        <TableHeadCell>Risk Score</TableHeadCell>
-                        <TableHeadCell>Missing Items</TableHeadCell>
-                        <TableHeadCell>Commercial Status</TableHeadCell>
+                        <TableHeadCell>Rangovas</TableHeadCell>
+                        <TableHeadCell>Bendra kaina</TableHeadCell>
+                        <TableHeadCell>Apimtis %</TableHeadCell>
+                        <TableHeadCell>Aptiktos eilutės</TableHeadCell>
+                        <TableHeadCell>Rizikos balas</TableHeadCell>
+                        <TableHeadCell>Trūkstami punktai</TableHeadCell>
+                        <TableHeadCell>Komercinis statusas</TableHeadCell>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1087,7 +1091,7 @@ export default function BidGuard() {
                                 {bid.name || '—'}
                                 {isRecommended && (
                                   <Badge variant="success">
-                                    <Award size={10} /> Recommended
+                                    <Award size={10} /> Rekomenduojama
                                   </Badge>
                                 )}
                               </span>
@@ -1111,10 +1115,10 @@ export default function BidGuard() {
 
                 <div className="flex flex-wrap gap-2 print:hidden">
                   <Button variant="secondary" onClick={handleGeneratePdf}>
-                    <Printer size={15} /> Generate Comparison PDF
+                    <Printer size={15} /> Generuoti palyginimo PDF
                   </Button>
                   <Button variant="secondary" onClick={handleExportExcel}>
-                    <Download size={15} /> Export Excel
+                    <Download size={15} /> Eksportuoti į Excel
                   </Button>
                 </div>
               </div>
@@ -1201,7 +1205,7 @@ export default function BidGuard() {
         {selectedBid && (
           <>
             <ModalHeader onClose={() => setSelectedBidId(null)}>
-              <ModalTitle>{selectedBid.name || 'Supplier'}</ModalTitle>
+              <ModalTitle>{selectedBid.name || 'Rangovas'}</ModalTitle>
               {selectedScore && (
                 <div className="mt-1.5 flex items-center gap-2">
                   <Badge variant={riskTier(selectedScore.balas).variant}>
@@ -1236,7 +1240,7 @@ export default function BidGuard() {
 
             <ModalFooter>
               <Button variant="primary" onClick={() => handleGenerateClarificationEmail(selectedBid.id)}>
-                <Mail size={15} /> Generate Clarification Email
+                <Mail size={15} /> Generuoti patikslinimo laišką
               </Button>
             </ModalFooter>
           </>
