@@ -30,20 +30,14 @@ import {
   Input,
   Skeleton,
   Stepper,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeadCell,
-  TableHeader,
-  TableRow,
   Textarea,
 } from '@/components/ui';
 import { uid } from '@/lib/uid';
 import { detectFileRows, type DetectedFileType } from '@/lib/utils/detectFileRows';
 
 const STEPS = [
-  { label: 'Project' },
-  { label: 'Reference Document' },
+  { label: 'Project Information' },
+  { label: 'Project Scope (BOQ)' },
   { label: 'Supplier Quotes' },
   { label: 'Review' },
 ];
@@ -55,6 +49,7 @@ interface UploadedFile {
   status: UploadStatus;
   fileType: DetectedFileType;
   rowCount: number | null;
+  uploadedAt: number | null;
   error?: string;
 }
 
@@ -79,8 +74,14 @@ async function readUpload(file: File): Promise<UploadedFile> {
     status: detection.error ? 'error' : 'success',
     fileType: detection.fileType,
     rowCount: detection.rowCount,
+    uploadedAt: Date.now(),
     error: detection.error,
   };
+}
+
+function formatUploadTime(ts: number | null): string {
+  if (!ts) return '';
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function FieldLabel({ htmlFor, children, optional }: { htmlFor: string; children: ReactNode; optional?: boolean }) {
@@ -142,7 +143,7 @@ function UploadedFileCard({
 }) {
   if (upload.status === 'reading') {
     return (
-      <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
+      <div className="flex animate-fade-in items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
         <Skeleton className="h-9 w-9 shrink-0 rounded-md" />
         <div className="min-w-0 flex-1 space-y-1.5">
           <Skeleton className="h-3 w-40" />
@@ -155,7 +156,7 @@ function UploadedFileCard({
 
   if (upload.status === 'error') {
     return (
-      <Alert variant="error" onClose={onRemove}>
+      <Alert variant="error" onClose={onRemove} className="animate-slide-in-up">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{upload.fileName}</span>
           <Badge variant="danger">Error</Badge>
@@ -166,21 +167,28 @@ function UploadedFileCard({
   }
 
   const status = resolveFileStatus(upload, compareRows);
+  const missing = status === 'warning' && compareRows != null && upload.rowCount != null ? compareRows - upload.rowCount : null;
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
+    <div className="flex animate-slide-in-up items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
       <FileTypeIcon fileType={upload.fileType} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-gray-900">{upload.fileName}</p>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
           <Badge variant="neutral">{fileTypeLabel(upload.fileType)}</Badge>
           <span className="text-xs text-gray-500">
             {upload.rowCount !== null ? `${upload.rowCount.toLocaleString('en-US')} rows detected` : 'Rows confirmed during analysis'}
           </span>
+          {upload.uploadedAt && (
+            <>
+              <span className="text-xs text-gray-300">·</span>
+              <span className="text-xs text-gray-500">Uploaded {formatUploadTime(upload.uploadedAt)}</span>
+            </>
+          )}
         </div>
-        {status === 'warning' && compareRows != null && (
-          <p className="mt-1 text-xs text-warning-700">
-            Fewer rows than the reference document ({compareRows.toLocaleString('en-US')}).
+        {missing != null && missing > 0 && (
+          <p className="mt-1 text-xs font-medium text-warning-700">
+            Missing {missing} position{missing === 1 ? '' : 's'} compared to the BOQ.
           </p>
         )}
       </div>
@@ -197,23 +205,66 @@ function UploadedFileCard({
   );
 }
 
+function ReviewCard({
+  label,
+  fileName,
+  rowCount,
+  missing,
+}: {
+  label: string;
+  fileName?: string;
+  rowCount: number | null;
+  missing: number | null;
+}) {
+  const isWarning = missing != null && missing > 0;
+  return (
+    <Card variant={isWarning ? 'warning' : 'default'} className="animate-fade-in">
+      <CardContent>
+        <div className="mb-1.5 flex items-start justify-between gap-2">
+          <p className="min-w-0 flex-1 text-sm font-semibold text-gray-900">{label}</p>
+          <div className="shrink-0">
+            {isWarning ? (
+              <Badge variant="warning">
+                <AlertTriangle size={11} /> Warning
+              </Badge>
+            ) : (
+              <Badge variant="success">
+                <Check size={11} /> Ready
+              </Badge>
+            )}
+          </div>
+        </div>
+        {fileName && <p className="mb-2 truncate text-xs text-gray-500">{fileName}</p>}
+        <p className="text-2xl font-semibold tabular-nums text-gray-900">
+          {rowCount ?? '—'} <span className="text-sm font-normal text-gray-500">positions</span>
+        </p>
+        {isWarning && (
+          <p className="mt-2 flex items-center gap-1 text-xs font-medium text-warning-700">
+            <AlertTriangle size={12} /> Missing {missing} position{missing === 1 ? '' : 's'}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const DEMO_PROJECT_INFO: ProjectInfo = {
   name: 'Riverside Office Complex — Electrical Package',
   client: 'Riverside Development Ltd.',
   description: 'Full electrical fit-out for the 6-floor office building.',
 };
 
-const DEMO_REFERENCE_DOC: UploadedFile = {
+const DEMO_REFERENCE_DOC: Omit<UploadedFile, 'uploadedAt'> = {
   fileName: 'reference-boq.xlsx',
   status: 'success',
   fileType: 'xlsx',
-  rowCount: 41,
+  rowCount: 184,
 };
 
-const DEMO_SUPPLIERS: Array<{ name: string; upload: UploadedFile }> = [
-  { name: 'UAB Elektromontas', upload: { fileName: 'supplier-a-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 41 } },
-  { name: 'MB Voltas Baltic', upload: { fileName: 'supplier-b-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 23 } },
-  { name: 'UAB Srovė ir Ko', upload: { fileName: 'supplier-c-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 44 } },
+const DEMO_SUPPLIERS: Array<{ name: string; upload: Omit<UploadedFile, 'uploadedAt'> }> = [
+  { name: 'Supplier A', upload: { fileName: 'supplier-a-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 184 } },
+  { name: 'Supplier B', upload: { fileName: 'supplier-b-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 171 } },
+  { name: 'Supplier C', upload: { fileName: 'supplier-c-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 184 } },
 ];
 
 export function NewProjectWizard() {
@@ -241,7 +292,7 @@ export function NewProjectWizard() {
   const handleReferenceFiles = async (files: FileList) => {
     const file = files[0];
     if (!file) return;
-    setReferenceDoc({ fileName: file.name, status: 'reading', fileType: 'unknown', rowCount: null });
+    setReferenceDoc({ fileName: file.name, status: 'reading', fileType: 'unknown', rowCount: null, uploadedAt: null });
     const result = await readUpload(file);
     setReferenceDoc(result);
   };
@@ -252,7 +303,7 @@ export function NewProjectWizard() {
     setSuppliers((prev) =>
       prev.map((s) =>
         s.id === supplierId
-          ? { ...s, upload: { fileName: file.name, status: 'reading', fileType: 'unknown', rowCount: null } }
+          ? { ...s, upload: { fileName: file.name, status: 'reading', fileType: 'unknown', rowCount: null, uploadedAt: null } }
           : s
       )
     );
@@ -261,9 +312,10 @@ export function NewProjectWizard() {
   };
 
   const loadDemoProject = () => {
+    const now = Date.now();
     setProjectInfo(DEMO_PROJECT_INFO);
-    setReferenceDoc(DEMO_REFERENCE_DOC);
-    setSuppliers(DEMO_SUPPLIERS.map((s) => ({ id: uid(), ...s })));
+    setReferenceDoc({ ...DEMO_REFERENCE_DOC, uploadedAt: now });
+    setSuppliers(DEMO_SUPPLIERS.map((s) => ({ id: uid(), name: s.name, upload: { ...s.upload, uploadedAt: now } })));
     setStep(4);
   };
 
@@ -282,19 +334,23 @@ export function NewProjectWizard() {
   };
 
   const referenceRows = referenceDoc?.rowCount ?? null;
+  const hasMissingScope = suppliers.some((s) => {
+    const rows = s.upload?.rowCount ?? null;
+    return referenceRows !== null && rows !== null && rows < referenceRows;
+  });
 
   if (submitted) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-6">
-        <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+        <div className="flex max-w-sm flex-col items-center gap-4 text-center animate-fade-in">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success-50 text-success-600">
             <CheckCircle2 size={24} />
           </div>
           <div className="space-y-1.5">
-            <h1 className="text-lg font-semibold text-gray-900">Project submitted for analysis</h1>
+            <h1 className="text-lg font-semibold text-gray-900">Project submitted for bid comparison</h1>
             <p className="text-sm text-gray-500">
-              {projectInfo.name} will be compared against {suppliers.length} supplier quote
-              {suppliers.length === 1 ? '' : 's'}. You&apos;ll be notified once BidGuard finishes.
+              {projectInfo.name} will be checked for missing scope and commercial risk across {suppliers.length}{' '}
+              supplier quote{suppliers.length === 1 ? '' : 's'}. You&apos;ll be notified once BidGuard finishes.
             </p>
           </div>
           <Link href="/">
@@ -326,8 +382,8 @@ export function NewProjectWizard() {
       </header>
 
       <main className="flex-1">
-        <div className="mx-auto max-w-3xl px-6 py-10">
-          <Stepper steps={STEPS} currentStep={step} className="mb-10" />
+        <div className="mx-auto max-w-3xl px-6 py-12">
+          <Stepper steps={STEPS} currentStep={step} className="mb-12" />
 
           <div className="space-y-1.5 mb-6">
             <p className="text-xs font-medium uppercase tracking-wide text-primary-600">
@@ -336,8 +392,8 @@ export function NewProjectWizard() {
           </div>
 
           {step === 1 && (
-            <>
-              <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
+            <div className="animate-fade-in space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
                 <div className="flex items-center gap-2.5">
                   <Sparkles size={16} className="shrink-0 text-primary-600" aria-hidden />
                   <p className="text-sm text-gray-600">See how BidGuard works with a real example.</p>
@@ -348,10 +404,10 @@ export function NewProjectWizard() {
               </div>
               <Card>
                 <CardHeader>
-                  <CardTitle>Project Information</CardTitle>
+                  <CardTitle className="text-lg">Project Information</CardTitle>
                   <CardDescription>Basic details to identify this project.</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-5">
+                <CardContent className="space-y-6">
                   <div>
                     <FieldLabel htmlFor="project-name">Project Name</FieldLabel>
                     <Input
@@ -384,22 +440,22 @@ export function NewProjectWizard() {
                   </div>
                 </CardContent>
               </Card>
-            </>
+            </div>
           )}
 
           {step === 2 && (
-            <Card>
+            <Card className="animate-fade-in">
               <CardHeader>
-                <CardTitle>Reference Documents</CardTitle>
+                <CardTitle className="text-lg">Project Scope (BOQ)</CardTitle>
                 <CardDescription>
-                  Upload the client&apos;s BOQ, Bill of Quantities, Technical Specification or Scope of Work.
+                  Upload the client&apos;s Bill of Quantities, Scope of Work or Technical Specification.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {!referenceDoc ? (
                   <FileUpload
                     accept=".xlsx,.xls,.pdf"
-                    label="Drag & drop the reference document, or click to browse"
+                    label="Drag & drop the BOQ, or click to browse"
                     hint="Supports Excel and PDF"
                     onFilesSelected={handleReferenceFiles}
                   />
@@ -411,16 +467,14 @@ export function NewProjectWizard() {
           )}
 
           {step === 3 && (
-            <Card>
+            <Card className="animate-fade-in">
               <CardHeader>
-                <CardTitle>Supplier Quotes</CardTitle>
-                <CardDescription>
-                  Add each supplier&apos;s quote so BidGuard can compare them against the reference document.
-                </CardDescription>
+                <CardTitle className="text-lg">Supplier Quotes</CardTitle>
+                <CardDescription>Upload quotations received from subcontractors.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {suppliers.map((supplier, index) => (
-                  <div key={supplier.id} className="rounded-lg border border-gray-200 bg-gray-50/40 p-4">
+                  <div key={supplier.id} className="rounded-lg border border-gray-200 bg-gray-50/40 p-5">
                     <div className="mb-3 flex items-center justify-between">
                       <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
                         Supplier {index + 1}
@@ -434,7 +488,7 @@ export function NewProjectWizard() {
                         <Trash2 size={15} />
                       </button>
                     </div>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       <div>
                         <FieldLabel htmlFor={`supplier-name-${supplier.id}`}>Supplier Name</FieldLabel>
                         <Input
@@ -465,7 +519,7 @@ export function NewProjectWizard() {
                 <button
                   type="button"
                   onClick={addSupplier}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-200 py-3 text-sm font-medium text-gray-500 transition-colors duration-150 ease-out hover:border-primary-400 hover:bg-primary-50/40 hover:text-primary-600"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-200 py-3.5 text-sm font-medium text-gray-500 transition-colors duration-150 ease-out hover:border-primary-400 hover:bg-primary-50/40 hover:text-primary-600"
                 >
                   <Plus size={16} />
                   Add Supplier
@@ -475,74 +529,37 @@ export function NewProjectWizard() {
           )}
 
           {step === 4 && (
-            <Card>
+            <Card className="animate-fade-in">
               <CardHeader>
-                <CardTitle>Review</CardTitle>
-                <CardDescription>Confirm the documents before BidGuard analyzes this project.</CardDescription>
+                <CardTitle className="text-lg">Review</CardTitle>
+                <CardDescription>Confirm the documents before BidGuard runs the bid comparison.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {suppliers.some(
-                  (s) =>
-                    referenceRows !== null && s.upload?.rowCount !== null && (s.upload?.rowCount ?? 0) < referenceRows
-                ) && (
-                  <Alert variant="warning" title="Some quotes have fewer line items than the reference document">
-                    This may indicate missing scope. Review the flagged suppliers below before analyzing.
+              <CardContent className="space-y-5">
+                {hasMissingScope && (
+                  <Alert variant="warning" title="Missing scope detected">
+                    One or more supplier quotes have fewer positions than the BOQ. Review before requesting a bid
+                    comparison.
                   </Alert>
                 )}
 
-                <Table>
-                  <TableHeader>
-                    <TableRow hover={false}>
-                      <TableHeadCell>Document</TableHeadCell>
-                      <TableHeadCell>File</TableHeadCell>
-                      <TableHeadCell>Type</TableHeadCell>
-                      <TableHeadCell>Detected Rows</TableHeadCell>
-                      <TableHeadCell>Status</TableHeadCell>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {referenceDoc && (
-                      <TableRow>
-                        <TableCell className="font-medium text-gray-900">Reference Document</TableCell>
-                        <TableCell className="max-w-[200px] truncate">{referenceDoc.fileName}</TableCell>
-                        <TableCell>
-                          <Badge variant="neutral">{fileTypeLabel(referenceDoc.fileType)}</Badge>
-                        </TableCell>
-                        <TableCell>{referenceDoc.rowCount ?? '—'}</TableCell>
-                        <TableCell>
-                          <Badge variant="neutral">Baseline</Badge>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {suppliers.map((supplier) => {
-                      const rows = supplier.upload?.rowCount ?? null;
-                      const isLower = referenceRows !== null && rows !== null && rows < referenceRows;
-                      return (
-                        <TableRow key={supplier.id}>
-                          <TableCell className="font-medium text-gray-900">{supplier.name}</TableCell>
-                          <TableCell className="max-w-[200px] truncate">{supplier.upload?.fileName ?? '—'}</TableCell>
-                          <TableCell>
-                            {supplier.upload && <Badge variant="neutral">{fileTypeLabel(supplier.upload.fileType)}</Badge>}
-                          </TableCell>
-                          <TableCell>{rows ?? '—'}</TableCell>
-                          <TableCell>
-                            {isLower ? (
-                              <Badge variant="warning">
-                                <AlertTriangle size={11} />
-                                Warning
-                              </Badge>
-                            ) : (
-                              <Badge variant="success">
-                                <Check size={11} />
-                                Ready
-                              </Badge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {referenceDoc && (
+                    <ReviewCard label="Reference BOQ" fileName={referenceDoc.fileName} rowCount={referenceDoc.rowCount} missing={null} />
+                  )}
+                  {suppliers.map((supplier) => {
+                    const rows = supplier.upload?.rowCount ?? null;
+                    const missing = referenceRows !== null && rows !== null ? referenceRows - rows : null;
+                    return (
+                      <ReviewCard
+                        key={supplier.id}
+                        label={supplier.name}
+                        fileName={supplier.upload?.fileName}
+                        rowCount={rows}
+                        missing={missing}
+                      />
+                    );
+                  })}
+                </div>
               </CardContent>
             </Card>
           )}
@@ -567,8 +584,15 @@ export function NewProjectWizard() {
               Continue
             </Button>
           ) : (
-            <Button onClick={handleAnalyze} isLoading={analyzing} disabled={!step2Valid || !step3Valid}>
-              Analyze Project
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={handleAnalyze}
+              isLoading={analyzing}
+              disabled={!step2Valid || !step3Valid}
+            >
+              {!analyzing && <ShieldCheck size={18} aria-hidden />}
+              {analyzing ? 'Analyzing…' : 'Analyze Project'}
             </Button>
           )}
         </div>

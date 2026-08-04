@@ -51,17 +51,24 @@ export function FileUpload({
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
       className={cn(
-        'flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-6 py-8 text-center transition-colors duration-150 ease-out',
+        'flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-6 py-8 text-center transition-all duration-200 ease-out',
         disabled
           ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400'
           : 'cursor-pointer text-gray-500 hover:border-primary-400 hover:bg-primary-50/40',
-        isDragging && !disabled && 'border-primary-500 bg-primary-50/60',
+        isDragging && !disabled && 'scale-[1.01] border-primary-500 bg-primary-50/60 ring-4 ring-primary-500/10',
         error && 'border-danger-400 bg-danger-50/40',
         !isDragging && !error && 'border-gray-200',
         className
       )}
     >
-      <UploadCloud size={22} className={disabled ? 'text-gray-300' : 'text-gray-400'} />
+      <UploadCloud
+        size={22}
+        className={cn(
+          'transition-transform duration-200 ease-out',
+          disabled ? 'text-gray-300' : 'text-gray-400',
+          isDragging && !disabled && '-translate-y-0.5 text-primary-500'
+        )}
+      />
       <p className="text-sm font-medium">{label}</p>
       {hint && <p className="text-xs text-gray-400">{hint}</p>}
       <input
