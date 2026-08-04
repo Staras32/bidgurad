@@ -50,8 +50,10 @@ export function FileUpload({
       }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
+      aria-label={label}
       className={cn(
         'flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-6 py-8 text-center transition-all duration-200 ease-out',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 focus-visible:ring-offset-2',
         disabled
           ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400'
           : 'cursor-pointer text-gray-500 hover:border-primary-400 hover:bg-primary-50/40',

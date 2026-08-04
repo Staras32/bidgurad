@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
+  Clock,
   FileSpreadsheet,
   FileText,
   Loader2,
@@ -26,6 +27,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  EmptyState,
   FileUpload,
   Input,
   Skeleton,
@@ -33,6 +35,7 @@ import {
   Textarea,
 } from '@/components/ui';
 import { uid } from '@/lib/uid';
+import { cn } from '@/lib/utils/cn';
 import { detectFileRows, type DetectedFileType } from '@/lib/utils/detectFileRows';
 
 const STEPS = [
@@ -46,6 +49,7 @@ type UploadStatus = 'reading' | 'success' | 'error';
 
 interface UploadedFile {
   fileName: string;
+  fileSize: number;
   status: UploadStatus;
   fileType: DetectedFileType;
   rowCount: number | null;
@@ -71,6 +75,7 @@ async function readUpload(file: File): Promise<UploadedFile> {
   const [detection] = await Promise.all([detectFileRows(file), wait(500)]);
   return {
     fileName: file.name,
+    fileSize: file.size,
     status: detection.error ? 'error' : 'success',
     fileType: detection.fileType,
     rowCount: detection.rowCount,
@@ -82,6 +87,12 @@ async function readUpload(file: File): Promise<UploadedFile> {
 function formatUploadTime(ts: number | null): string {
   if (!ts) return '';
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatFileSize(bytes: number): string {
+  if (!bytes) return '0 KB';
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function FieldLabel({ htmlFor, children, optional }: { htmlFor: string; children: ReactNode; optional?: boolean }) {
@@ -143,13 +154,19 @@ function UploadedFileCard({
 }) {
   if (upload.status === 'reading') {
     return (
-      <div className="flex animate-fade-in items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex animate-fade-in items-start gap-3 rounded-lg border border-gray-200 bg-white p-4"
+      >
         <Skeleton className="h-9 w-9 shrink-0 rounded-md" />
         <div className="min-w-0 flex-1 space-y-1.5">
-          <Skeleton className="h-3 w-40" />
-          <Skeleton className="h-2.5 w-28" />
+          <p className="truncate text-sm font-medium text-gray-700">{upload.fileName}</p>
+          <div className="flex items-center gap-1.5 text-xs text-gray-400">
+            <Loader2 className="shrink-0 animate-spin" size={12} aria-hidden />
+            Reading file…
+          </div>
         </div>
-        <Loader2 className="shrink-0 animate-spin text-gray-300" size={16} aria-hidden />
       </div>
     );
   }
@@ -168,39 +185,50 @@ function UploadedFileCard({
 
   const status = resolveFileStatus(upload, compareRows);
   const missing = status === 'warning' && compareRows != null && upload.rowCount != null ? compareRows - upload.rowCount : null;
+  const isWarning = status === 'warning';
 
   return (
-    <div className="flex animate-slide-in-up items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        'flex animate-slide-in-up items-start gap-3 rounded-lg border p-4',
+        isWarning ? 'border-warning-200 bg-warning-50/40' : 'border-gray-200 bg-white'
+      )}
+    >
       <FileTypeIcon fileType={upload.fileType} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-gray-900">{upload.fileName}</p>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{upload.fileName}</p>
+          <div className="flex shrink-0 items-center gap-1">
+            <FileStatusBadge status={status} />
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label={`Remove ${upload.fileName}`}
+              className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors duration-150 ease-out hover:bg-gray-100 hover:text-danger-600"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
           <Badge variant="neutral">{fileTypeLabel(upload.fileType)}</Badge>
+          <span className="text-xs text-gray-500">{formatFileSize(upload.fileSize)}</span>
           <span className="text-xs text-gray-500">
             {upload.rowCount !== null ? `${upload.rowCount.toLocaleString('en-US')} rows detected` : 'Rows confirmed during analysis'}
           </span>
           {upload.uploadedAt && (
-            <>
-              <span className="text-xs text-gray-300">·</span>
-              <span className="text-xs text-gray-500">Uploaded {formatUploadTime(upload.uploadedAt)}</span>
-            </>
+            <span className="text-xs text-gray-500">Uploaded {formatUploadTime(upload.uploadedAt)}</span>
           )}
         </div>
         {missing != null && missing > 0 && (
-          <p className="mt-1 text-xs font-medium text-warning-700">
+          <p className="mt-1.5 flex items-center gap-1 text-xs font-medium text-warning-700">
+            <AlertTriangle size={12} className="shrink-0" aria-hidden />
             Missing {missing} position{missing === 1 ? '' : 's'} compared to the BOQ.
           </p>
         )}
       </div>
-      <FileStatusBadge status={status} />
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={`Remove ${upload.fileName}`}
-        className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors duration-150 ease-out hover:bg-gray-100 hover:text-gray-700"
-      >
-        <Trash2 size={16} />
-      </button>
     </div>
   );
 }
@@ -234,13 +262,13 @@ function ReviewCard({
             )}
           </div>
         </div>
-        {fileName && <p className="mb-2 truncate text-xs text-gray-500">{fileName}</p>}
-        <p className="text-2xl font-semibold tabular-nums text-gray-900">
+        {fileName && <p className="mb-3 truncate text-xs text-gray-500">{fileName}</p>}
+        <p className="text-3xl font-semibold tabular-nums leading-none text-gray-900">
           {rowCount ?? '—'} <span className="text-sm font-normal text-gray-500">positions</span>
         </p>
         {isWarning && (
-          <p className="mt-2 flex items-center gap-1 text-xs font-medium text-warning-700">
-            <AlertTriangle size={12} /> Missing {missing} position{missing === 1 ? '' : 's'}
+          <p className="mt-3 flex items-center gap-1 text-xs font-medium text-warning-700">
+            <AlertTriangle size={12} className="shrink-0" aria-hidden /> Missing {missing} position{missing === 1 ? '' : 's'}
           </p>
         )}
       </CardContent>
@@ -256,15 +284,16 @@ const DEMO_PROJECT_INFO: ProjectInfo = {
 
 const DEMO_REFERENCE_DOC: Omit<UploadedFile, 'uploadedAt'> = {
   fileName: 'reference-boq.xlsx',
+  fileSize: 84_200,
   status: 'success',
   fileType: 'xlsx',
   rowCount: 184,
 };
 
 const DEMO_SUPPLIERS: Array<{ name: string; upload: Omit<UploadedFile, 'uploadedAt'> }> = [
-  { name: 'Supplier A', upload: { fileName: 'supplier-a-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 184 } },
-  { name: 'Supplier B', upload: { fileName: 'supplier-b-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 171 } },
-  { name: 'Supplier C', upload: { fileName: 'supplier-c-quote.xlsx', status: 'success', fileType: 'xlsx', rowCount: 184 } },
+  { name: 'Supplier A', upload: { fileName: 'supplier-a-quote.xlsx', fileSize: 79_400, status: 'success', fileType: 'xlsx', rowCount: 184 } },
+  { name: 'Supplier B', upload: { fileName: 'supplier-b-quote.xlsx', fileSize: 71_800, status: 'success', fileType: 'xlsx', rowCount: 171 } },
+  { name: 'Supplier C', upload: { fileName: 'supplier-c-quote.xlsx', fileSize: 82_100, status: 'success', fileType: 'xlsx', rowCount: 184 } },
 ];
 
 export function NewProjectWizard() {
@@ -273,6 +302,7 @@ export function NewProjectWizard() {
   const [analyzing, setAnalyzing] = useState(false);
 
   const [projectInfo, setProjectInfo] = useState<ProjectInfo>({ name: '', client: '', description: '' });
+  const [touched, setTouched] = useState({ name: false, client: false });
   const [referenceDoc, setReferenceDoc] = useState<UploadedFile | null>(null);
   const [suppliers, setSuppliers] = useState<SupplierRow[]>([
     { id: uid(), name: '', upload: null },
@@ -286,13 +316,24 @@ export function NewProjectWizard() {
 
   const canContinue = step === 1 ? step1Valid : step === 2 ? step2Valid : step === 3 ? step3Valid : true;
 
+  const stepHelperText =
+    step === 1 && !step1Valid
+      ? 'Enter a project name and client to continue.'
+      : step === 2 && !step2Valid
+        ? 'Upload the BOQ to continue.'
+        : step === 3 && !step3Valid
+          ? 'Add a name and a file for every supplier to continue.'
+          : step === 4 && (!step2Valid || !step3Valid)
+            ? 'Complete the previous steps before analyzing this project.'
+            : null;
+
   const goNext = () => setStep((s) => Math.min(4, s + 1));
   const goBack = () => setStep((s) => Math.max(1, s - 1));
 
   const handleReferenceFiles = async (files: FileList) => {
     const file = files[0];
     if (!file) return;
-    setReferenceDoc({ fileName: file.name, status: 'reading', fileType: 'unknown', rowCount: null, uploadedAt: null });
+    setReferenceDoc({ fileName: file.name, fileSize: file.size, status: 'reading', fileType: 'unknown', rowCount: null, uploadedAt: null });
     const result = await readUpload(file);
     setReferenceDoc(result);
   };
@@ -303,7 +344,7 @@ export function NewProjectWizard() {
     setSuppliers((prev) =>
       prev.map((s) =>
         s.id === supplierId
-          ? { ...s, upload: { fileName: file.name, status: 'reading', fileType: 'unknown', rowCount: null, uploadedAt: null } }
+          ? { ...s, upload: { fileName: file.name, fileSize: file.size, status: 'reading', fileType: 'unknown', rowCount: null, uploadedAt: null } }
           : s
       )
     );
@@ -385,9 +426,13 @@ export function NewProjectWizard() {
         <div className="mx-auto max-w-3xl px-6 py-12">
           <Stepper steps={STEPS} currentStep={step} className="mb-12" />
 
-          <div className="space-y-1.5 mb-6">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-medium uppercase tracking-wide text-primary-600">
               Step {step} of 4 · {STEPS[step - 1].label}
+            </p>
+            <p className="flex items-center gap-1.5 text-xs text-gray-400">
+              <Clock size={13} aria-hidden />
+              Estimated time: 2–3 minutes
             </p>
           </div>
 
@@ -415,7 +460,15 @@ export function NewProjectWizard() {
                       placeholder="e.g. Riverside Office Complex — Electrical Package"
                       value={projectInfo.name}
                       onChange={(e) => setProjectInfo((p) => ({ ...p, name: e.target.value }))}
+                      onBlur={() => setTouched((t) => ({ ...t, name: true }))}
+                      error={touched.name && !projectInfo.name.trim()}
+                      aria-describedby={touched.name && !projectInfo.name.trim() ? 'project-name-error' : undefined}
                     />
+                    {touched.name && !projectInfo.name.trim() && (
+                      <p id="project-name-error" className="mt-1.5 text-xs text-danger-600">
+                        Project name is required.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <FieldLabel htmlFor="project-client">Client</FieldLabel>
@@ -424,7 +477,15 @@ export function NewProjectWizard() {
                       placeholder="e.g. Riverside Development Ltd."
                       value={projectInfo.client}
                       onChange={(e) => setProjectInfo((p) => ({ ...p, client: e.target.value }))}
+                      onBlur={() => setTouched((t) => ({ ...t, client: true }))}
+                      error={touched.client && !projectInfo.client.trim()}
+                      aria-describedby={touched.client && !projectInfo.client.trim() ? 'project-client-error' : undefined}
                     />
+                    {touched.client && !projectInfo.client.trim() && (
+                      <p id="project-client-error" className="mt-1.5 text-xs text-danger-600">
+                        Client is required.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <FieldLabel htmlFor="project-description" optional>
@@ -473,6 +534,12 @@ export function NewProjectWizard() {
                 <CardDescription>Upload quotations received from subcontractors.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {suppliers.length === 0 && (
+                  <EmptyState
+                    title="No suppliers added yet"
+                    description="Add each subcontractor's quote so BidGuard can compare it against the BOQ."
+                  />
+                )}
                 {suppliers.map((supplier, index) => (
                   <div key={supplier.id} className="rounded-lg border border-gray-200 bg-gray-50/40 p-5">
                     <div className="mb-3 flex items-center justify-between">
@@ -530,9 +597,22 @@ export function NewProjectWizard() {
 
           {step === 4 && (
             <Card className="animate-fade-in">
-              <CardHeader>
-                <CardTitle className="text-lg">Review</CardTitle>
-                <CardDescription>Confirm the documents before BidGuard runs the bid comparison.</CardDescription>
+              <CardHeader className="flex flex-row items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg">Review</CardTitle>
+                  <CardDescription>Confirm the documents before BidGuard runs the bid comparison.</CardDescription>
+                </div>
+                <Badge variant={hasMissingScope ? 'warning' : 'success'} className="shrink-0">
+                  {hasMissingScope ? (
+                    <>
+                      <AlertTriangle size={11} /> Needs review
+                    </>
+                  ) : (
+                    <>
+                      <Check size={11} /> Ready to compare
+                    </>
+                  )}
+                </Badge>
               </CardHeader>
               <CardContent className="space-y-5">
                 {hasMissingScope && (
@@ -567,34 +647,41 @@ export function NewProjectWizard() {
       </main>
 
       <footer className="sticky bottom-0 border-t border-gray-100 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
-          {step === 1 ? (
-            <Link href="/">
-              <Button variant="ghost">Cancel</Button>
-            </Link>
-          ) : (
-            <Button variant="secondary" onClick={goBack}>
-              <ArrowLeft size={15} />
-              Back
-            </Button>
+        <div className="mx-auto max-w-3xl px-6 py-4">
+          {stepHelperText && (
+            <p role="status" className="mb-2 text-right text-xs text-gray-500">
+              {stepHelperText}
+            </p>
           )}
+          <div className="flex items-center justify-between">
+            {step === 1 ? (
+              <Link href="/">
+                <Button variant="ghost">Cancel</Button>
+              </Link>
+            ) : (
+              <Button variant="secondary" onClick={goBack}>
+                <ArrowLeft size={15} />
+                Back
+              </Button>
+            )}
 
-          {step < 4 ? (
-            <Button onClick={goNext} disabled={!canContinue}>
-              Continue
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={handleAnalyze}
-              isLoading={analyzing}
-              disabled={!step2Valid || !step3Valid}
-            >
-              {!analyzing && <ShieldCheck size={18} aria-hidden />}
-              {analyzing ? 'Analyzing…' : 'Analyze Project'}
-            </Button>
-          )}
+            {step < 4 ? (
+              <Button onClick={goNext} disabled={!canContinue}>
+                Continue
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={handleAnalyze}
+                isLoading={analyzing}
+                disabled={!step2Valid || !step3Valid}
+              >
+                {!analyzing && <ShieldCheck size={18} aria-hidden />}
+                {analyzing ? 'Analyzing…' : 'Analyze Project'}
+              </Button>
+            )}
+          </div>
         </div>
       </footer>
     </div>
