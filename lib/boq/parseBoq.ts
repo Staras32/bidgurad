@@ -2,6 +2,8 @@ import * as XLSX from 'xlsx';
 import { uid } from '@/lib/uid';
 import { parseEuNumber } from '@/lib/numberParser';
 import type { BoqFileType, BoqParseResult, BoqRow } from './types';
+import { extractBoqTable, type PositionedToken } from './reconstructTable';
+import { ocrPdfPages, type OcrProgress } from './ocrPdf';
 
 type Row = (string | number | undefined)[];
 
@@ -186,7 +188,11 @@ function parsePdfLineToRow(line: string): Omit<BoqRow, 'packageId'> | null {
   };
 }
 
-async function parsePdf(file: File): Promise<BoqParseResult> {
+async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => void): Promise<BoqParseResult> {
+  let pagesTextTokens: PositionedToken[][] = [];
+  let pagesLines: string[][] = [];
+  let totalChars = 0;
+
   try {
     const pdfjsLib = await import('pdfjs-dist');
     pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -194,44 +200,84 @@ async function parsePdf(file: File): Promise<BoqParseResult> {
     const buffer = await file.arrayBuffer();
     const doc = await pdfjsLib.getDocument({ data: buffer }).promise;
 
-    const lines: string[] = [];
     for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
       const page = await doc.getPage(pageNum);
       const textContent = await page.getTextContent();
+      const items = textContent.items as { str: string; transform: number[]; width: number }[];
+
+      const pageTokens: PositionedToken[] = [];
       let currentY: number | null = null;
       let currentLine: string[] = [];
-      for (const item of textContent.items as { str: string; transform: number[] }[]) {
+      const lines: string[] = [];
+      for (const item of items) {
+        if (!item.str) continue;
+        totalChars += item.str.replace(/\s/g, '').length;
+        pageTokens.push({ text: item.str, x: item.transform[4], y: -item.transform[5], x2: item.transform[4] + item.width });
+
         const y = item.transform[5];
         if (currentY === null || Math.abs(y - currentY) > 2) {
           if (currentLine.length > 0) lines.push(currentLine.join(' '));
           currentLine = [];
           currentY = y;
         }
-        if (item.str) currentLine.push(item.str);
+        currentLine.push(item.str);
       }
       if (currentLine.length > 0) lines.push(currentLine.join(' '));
+
+      pagesTextTokens.push(pageTokens);
+      pagesLines.push(lines);
     }
-
-    const rows = lines
-      .map(parsePdfLineToRow)
-      .filter((r): r is Omit<BoqRow, 'packageId'> => r !== null);
-
-    if (rows.length === 0) {
-      return {
-        fileType: 'pdf',
-        rows: [],
-        headerFound: false,
-        error: 'Iš šio PDF nepavyko ištraukti BOQ pozicijų. Galimai tai nuskenuotas vaizdas be pažymimo teksto.',
-      };
-    }
-
-    return { fileType: 'pdf', rows, headerFound: false };
   } catch {
     return {
       fileType: 'pdf',
       rows: [],
       headerFound: false,
       error: 'Nepavyko nuskaityti šio PDF. Patikrink, ar jame yra pažymimas tekstas (ne nuskenuotas vaizdas).',
+    };
+  }
+
+  if (totalChars > 0) {
+    const structuredRows = extractBoqTable(pagesTextTokens);
+    if (structuredRows.length > 0) {
+      return { fileType: 'pdf', rows: structuredRows, headerFound: true, pdfExtractionMethod: 'text' };
+    }
+
+    const legacyRows = pagesLines
+      .flat()
+      .map(parsePdfLineToRow)
+      .filter((r): r is Omit<BoqRow, 'packageId'> => r !== null);
+    if (legacyRows.length > 0) {
+      return { fileType: 'pdf', rows: legacyRows, headerFound: false, pdfExtractionMethod: 'text' };
+    }
+
+    return {
+      fileType: 'pdf',
+      rows: [],
+      headerFound: false,
+      error: 'Iš šio PDF nepavyko ištraukti BOQ pozicijų. Failas turi teksto sluoksnį, bet jame neaptikta atpažįstamų pozicijų.',
+    };
+  }
+
+  // No text layer at all — this PDF's content is vector paths/outlines, not real glyphs. OCR is the only option.
+  try {
+    const pagesOcrTokens = await ocrPdfPages(file, onOcrProgress);
+    const ocrRows = extractBoqTable(pagesOcrTokens, 18);
+    if (ocrRows.length === 0) {
+      return {
+        fileType: 'pdf',
+        rows: [],
+        headerFound: false,
+        pdfExtractionMethod: 'ocr',
+        error: 'Iš šio PDF nepavyko ištraukti BOQ pozicijų. Galimai tai nuskenuotas vaizdas be pažymimo teksto.',
+      };
+    }
+    return { fileType: 'pdf', rows: ocrRows, headerFound: true, pdfExtractionMethod: 'ocr' };
+  } catch {
+    return {
+      fileType: 'pdf',
+      rows: [],
+      headerFound: false,
+      error: 'Nepavyko atpažinti šio PDF teksto (OCR nepavyko). Patikrink, ar failas nėra pažeistas.',
     };
   }
 }
@@ -241,10 +287,12 @@ function extensionOf(name: string): string {
   return idx === -1 ? '' : name.slice(idx + 1).toLowerCase();
 }
 
-export async function parseBoqFile(file: File): Promise<BoqParseResult> {
+export async function parseBoqFile(file: File, onOcrProgress?: (progress: OcrProgress) => void): Promise<BoqParseResult> {
   const ext = extensionOf(file.name);
   if (ext === 'xlsx' || ext === 'xls') return parseXlsx(file);
-  if (ext === 'pdf') return parsePdf(file);
+  if (ext === 'pdf') return parsePdf(file, onOcrProgress);
   const fileType: BoqFileType = 'unknown';
   return { fileType, rows: [], headerFound: false, error: 'Nepalaikomas failo tipas. Įkelk Excel arba PDF failą.' };
 }
+
+export type { OcrProgress };

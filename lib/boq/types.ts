@@ -26,5 +26,7 @@ export interface BoqParseResult {
   rows: Omit<BoqRow, 'packageId'>[];
   /** True when the source file had no reliably-detected header row (xlsx) — a real signal, not a guess. */
   headerFound: boolean;
+  /** How PDF content was actually read — absent for xlsx. 'ocr' means the PDF had no text layer at all. */
+  pdfExtractionMethod?: 'text' | 'ocr';
   error?: string;
 }

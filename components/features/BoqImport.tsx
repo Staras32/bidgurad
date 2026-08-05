@@ -37,7 +37,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { uid } from '@/lib/uid';
 import { storage } from '@/lib/storage';
-import { parseBoqFile } from '@/lib/boq/parseBoq';
+import { parseBoqFile, type OcrProgress } from '@/lib/boq/parseBoq';
 import { buildWorkPackages, OTHER_PACKAGE_NAME } from '@/lib/boq/classify';
 import type { BoqFileType, BoqRow, WorkPackage } from '@/lib/boq/types';
 
@@ -60,6 +60,8 @@ export function BoqImport() {
   const [headerFound, setHeaderFound] = useState(true);
   const [usedFileSections, setUsedFileSections] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pdfExtractionMethod, setPdfExtractionMethod] = useState<'text' | 'ocr' | undefined>(undefined);
+  const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
 
   const [packages, setPackages] = useState<WorkPackage[]>([]);
   const [rows, setRows] = useState<BoqRow[]>([]);
@@ -85,10 +87,12 @@ export function BoqImport() {
     setFileSize(file.size);
     setStatus('reading');
     setError(null);
+    setOcrProgress(null);
 
-    const result = await parseBoqFile(file);
+    const result = await parseBoqFile(file, (progress) => setOcrProgress(progress));
     setFileType(result.fileType);
     setHeaderFound(result.headerFound);
+    setPdfExtractionMethod(result.pdfExtractionMethod);
 
     if (result.error) {
       setStatus('error');
@@ -109,6 +113,8 @@ export function BoqImport() {
     setStatus('idle');
     setFileName('');
     setError(null);
+    setOcrProgress(null);
+    setPdfExtractionMethod(undefined);
     setPackages([]);
     setRows([]);
     setSelectedPackageId(null);
@@ -248,7 +254,11 @@ export function BoqImport() {
                   <Skeleton className="h-9 w-9 shrink-0 rounded-md" />
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <p className="truncate text-sm font-medium text-gray-700">{fileName}</p>
-                    <p className="text-xs text-gray-400">Skaitomos pozicijos ir aptinkami darbų paketai…</p>
+                    <p className="text-xs text-gray-400">
+                      {ocrProgress
+                        ? `OCR atpažinimas: ${ocrProgress.page}/${ocrProgress.totalPages} psl. (${ocrProgress.stage === 'render' ? 'ruošiama' : 'atpažįstama'})…`
+                        : 'Skaitomos pozicijos ir aptinkami darbų paketai…'}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -293,7 +303,13 @@ export function BoqImport() {
                   Nepavyko patikimai atpažinti stulpelių antraščių — pozicijos sudarytos iš pilno eilutės teksto.
                 </Alert>
               )}
-              {fileType === 'pdf' && (
+              {fileType === 'pdf' && pdfExtractionMethod === 'ocr' && (
+                <Alert variant="warning" title="Duomenys atpažinti OCR būdu">
+                  Šis PDF neturėjo pažymimo teksto sluoksnio (tekstas buvo konvertuotas į vektorinius kontūrus), todėl
+                  pozicijos atpažintos optiniu būdu (OCR). Būtinai patikrink kiekius ir pavadinimus rankiniu būdu.
+                </Alert>
+              )}
+              {fileType === 'pdf' && pdfExtractionMethod === 'text' && (
                 <Alert variant="warning" title="Duomenys ištraukti iš PDF teksto">
                   PDF struktūra negarantuota — kiekis ir mato vienetas gali būti aptikti ne visose pozicijose.
                 </Alert>
