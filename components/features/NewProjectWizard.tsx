@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   Trash2,
   X,
   XCircle,
@@ -84,6 +85,36 @@ const WARNING_LABELS: Record<WarningReason, string> = {
 };
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Wraps a single real File in a genuine FileList, so demo files run through the exact same upload pipeline as a user's own files. */
+function toFileList(file: File): FileList {
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  return dt.files;
+}
+
+const DEMO_PROJECT_INFO: ProjectInfo = {
+  name: 'Riverside Office Complex — Electrical Package',
+  client: 'Riverside Development Ltd.',
+  description:
+    'Full electrical fit-out for the 6-floor office building: instalation, lighting, fire alarm wiring and emergency lighting.',
+};
+
+const DEMO_SUPPLIERS: { name: string; file: string }[] = [
+  { name: 'UAB Elektromontas', file: '/demo/supplier-a-uab-elektromontas.xlsx' },
+  { name: 'MB Voltas Baltic', file: '/demo/supplier-b-mb-voltas-baltic.xlsx' },
+  { name: 'UAB Srovė ir Ko', file: '/demo/supplier-c-uab-srove-ir-ko.xlsx' },
+];
+const DEMO_BOQ_FILE = '/demo/reference-boq.xlsx';
+
+async function fetchDemoFile(path: string): Promise<File> {
+  const res = await fetch(path);
+  const blob = await res.blob();
+  const name = path.split('/').pop() ?? 'demo-file.xlsx';
+  return new File([blob], name, {
+    type: blob.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+}
 
 /** Reads and validates a file for real, in three real sequential stages — no fabricated progress. */
 async function readUpload(file: File, onPhase: (phase: UploadPhase) => void): Promise<UploadedFile> {
@@ -415,6 +446,7 @@ export function NewProjectWizard() {
   const [step, setStep] = useState(1);
   const [submitted, setSubmitted] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [loadingDemo, setLoadingDemo] = useState(false);
 
   const [projectInfo, setProjectInfo] = useState<ProjectInfo>({ name: '', client: '', description: '' });
   const [touched, setTouched] = useState({ name: false, client: false });
@@ -512,6 +544,35 @@ export function NewProjectWizard() {
     setSuppliers((prev) => prev.map((s) => (s.id === supplierId ? { ...s, upload: result } : s)));
   };
 
+  /**
+   * Loads real sample files through the exact same fetch → readUpload → setState pipeline
+   * as a manual upload. Every number shown afterwards (rows, columns, coverage, warnings)
+   * is computed from the actual bundled .xlsx files — nothing here is hardcoded.
+   */
+  const loadDemoProject = async () => {
+    setLoadingDemo(true);
+    try {
+      setProjectInfo(DEMO_PROJECT_INFO);
+
+      const supplierIds = DEMO_SUPPLIERS.map(() => uid());
+      setSuppliers(DEMO_SUPPLIERS.map((s, i) => ({ id: supplierIds[i], name: s.name, upload: null })));
+
+      const [boqFile, ...supplierFiles] = await Promise.all([
+        fetchDemoFile(DEMO_BOQ_FILE),
+        ...DEMO_SUPPLIERS.map((s) => fetchDemoFile(s.file)),
+      ]);
+
+      await Promise.all([
+        handleReferenceFiles(toFileList(boqFile)),
+        ...supplierFiles.map((file, i) => handleSupplierFiles(supplierIds[i], toFileList(file))),
+      ]);
+
+      setStep(4);
+    } finally {
+      setLoadingDemo(false);
+    }
+  };
+
   const addSupplier = () => setSuppliers((prev) => [...prev, { id: uid(), name: '', upload: null }]);
   const removeSupplier = (id: string) => setSuppliers((prev) => prev.filter((s) => s.id !== id));
   const renameSupplier = (id: string, name: string) =>
@@ -595,60 +656,73 @@ export function NewProjectWizard() {
           </div>
 
           {step === 1 && (
-            <Card className="animate-fade-in">
-              <CardHeader>
-                <CardTitle className="text-lg">Project Information</CardTitle>
-                <CardDescription>Basic details to identify this project.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <FieldLabel htmlFor="project-name">Project Name</FieldLabel>
-                  <Input
-                    id="project-name"
-                    placeholder="e.g. Riverside Office Complex — Electrical Package"
-                    value={projectInfo.name}
-                    onChange={(e) => setProjectInfo((p) => ({ ...p, name: e.target.value }))}
-                    onBlur={() => setTouched((t) => ({ ...t, name: true }))}
-                    error={touched.name && !projectInfo.name.trim()}
-                    aria-describedby={touched.name && !projectInfo.name.trim() ? 'project-name-error' : undefined}
-                  />
-                  {touched.name && !projectInfo.name.trim() && (
-                    <p id="project-name-error" className="mt-1.5 text-xs text-danger-600">
-                      Project name is required.
-                    </p>
-                  )}
+            <div className="animate-fade-in space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles size={16} className="shrink-0 text-primary-600" aria-hidden />
+                  <p className="text-sm text-gray-600">
+                    See how BidGuard works with a real example — real files, really parsed.
+                  </p>
                 </div>
-                <div>
-                  <FieldLabel htmlFor="project-client">Client</FieldLabel>
-                  <Input
-                    id="project-client"
-                    placeholder="e.g. Riverside Development Ltd."
-                    value={projectInfo.client}
-                    onChange={(e) => setProjectInfo((p) => ({ ...p, client: e.target.value }))}
-                    onBlur={() => setTouched((t) => ({ ...t, client: true }))}
-                    error={touched.client && !projectInfo.client.trim()}
-                    aria-describedby={touched.client && !projectInfo.client.trim() ? 'project-client-error' : undefined}
-                  />
-                  {touched.client && !projectInfo.client.trim() && (
-                    <p id="project-client-error" className="mt-1.5 text-xs text-danger-600">
-                      Client is required.
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <FieldLabel htmlFor="project-description" optional>
-                    Description
-                  </FieldLabel>
-                  <Textarea
-                    id="project-description"
-                    rows={4}
-                    placeholder="Add context for this project"
-                    value={projectInfo.description}
-                    onChange={(e) => setProjectInfo((p) => ({ ...p, description: e.target.value }))}
-                  />
-                </div>
-              </CardContent>
-            </Card>
+                <Button variant="secondary" size="sm" onClick={loadDemoProject} isLoading={loadingDemo}>
+                  Try Demo Project
+                </Button>
+              </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Project Information</CardTitle>
+                  <CardDescription>Basic details to identify this project.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div>
+                    <FieldLabel htmlFor="project-name">Project Name</FieldLabel>
+                    <Input
+                      id="project-name"
+                      placeholder="e.g. Riverside Office Complex — Electrical Package"
+                      value={projectInfo.name}
+                      onChange={(e) => setProjectInfo((p) => ({ ...p, name: e.target.value }))}
+                      onBlur={() => setTouched((t) => ({ ...t, name: true }))}
+                      error={touched.name && !projectInfo.name.trim()}
+                      aria-describedby={touched.name && !projectInfo.name.trim() ? 'project-name-error' : undefined}
+                    />
+                    {touched.name && !projectInfo.name.trim() && (
+                      <p id="project-name-error" className="mt-1.5 text-xs text-danger-600">
+                        Project name is required.
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="project-client">Client</FieldLabel>
+                    <Input
+                      id="project-client"
+                      placeholder="e.g. Riverside Development Ltd."
+                      value={projectInfo.client}
+                      onChange={(e) => setProjectInfo((p) => ({ ...p, client: e.target.value }))}
+                      onBlur={() => setTouched((t) => ({ ...t, client: true }))}
+                      error={touched.client && !projectInfo.client.trim()}
+                      aria-describedby={touched.client && !projectInfo.client.trim() ? 'project-client-error' : undefined}
+                    />
+                    {touched.client && !projectInfo.client.trim() && (
+                      <p id="project-client-error" className="mt-1.5 text-xs text-danger-600">
+                        Client is required.
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <FieldLabel htmlFor="project-description" optional>
+                      Description
+                    </FieldLabel>
+                    <Textarea
+                      id="project-description"
+                      rows={4}
+                      placeholder="Add context for this project"
+                      value={projectInfo.description}
+                      onChange={(e) => setProjectInfo((p) => ({ ...p, description: e.target.value }))}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {step === 2 && (
