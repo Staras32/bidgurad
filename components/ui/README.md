@@ -160,7 +160,7 @@ Use for every "nothing here yet" moment (empty lists, zero search results, no hi
 - Handles click-to-browse and drag-and-drop internally; you only get `onFilesSelected(FileList)`.
 - Default label/hint are already in Lithuanian to match the product's primary language — override `label`/`hint` only when the surrounding screen is intentionally in a different language (the New Project Wizard is English by spec).
 - The dropzone is spacious by default (`px-6 py-8`); for compact contexts (e.g. one FileUpload per row in a dense list), override with `className="py-3"` etc. rather than building a separate compact variant.
-- There's no built-in "uploaded file" preview state — compose one from `Card`/plain markup + `Badge` + a `Trash2` remove button, matching the `UploadedFileCard` pattern in `NewProjectWizard.tsx` / the reference-doc row in `BidGuard.tsx`.
+- There's no built-in "uploaded file" preview state — compose one from `Card`/plain markup + `Badge` + a `Trash2` remove button.
 
 ### Modal
 `components/ui/Modal.tsx`
@@ -275,9 +275,9 @@ the color/border/hover recipe identical.
 - [`components/features/BidGuard.tsx`](../features/BidGuard.tsx) — main
   analysis screen: bid entry, file/paste import, AI risk results, saved
   projects, contractor history.
-- [`components/features/NewProjectWizard.tsx`](../features/NewProjectWizard.tsx) —
-  4-step new project flow (project info → reference document → supplier
-  quotes → review).
+- [`components/features/BoqImport.tsx`](../features/BoqImport.tsx) — BOQ
+  import & work package detection (upload → auto-grouped packages → rename /
+  merge / split / drag & drop → save).
 
 Both are built exclusively from this library. If you need something a screen
 doesn't have yet, extend a component here (and this doc) rather than styling

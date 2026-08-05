@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
-import { NewProjectWizard } from '@/components/features/NewProjectWizard';
+import { BoqImport } from '@/components/features/BoqImport';
 
 export const metadata: Metadata = {
-  title: 'New Project – BidGuard',
+  title: 'Darbų žiniaraščio importas – BidGuard',
 };
 
 export default function NewProjectPage() {
-  return <NewProjectWizard />;
+  return <BoqImport />;
 }
