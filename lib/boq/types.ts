@@ -21,9 +21,17 @@ export interface WorkPackage {
 
 export type BoqFileType = 'xlsx' | 'pdf' | 'unknown';
 
+export interface ExcludedBoqLine {
+  raw: string;
+  reason: string;
+}
+
 export interface BoqParseResult {
   fileType: BoqFileType;
   rows: Omit<BoqRow, 'packageId'>[];
+  /** Lines the deterministic parser looked at but rejected — section headers, document boilerplate,
+   * dates, incomplete rows — each with a concrete reason, shown to the user for transparency. */
+  excluded: ExcludedBoqLine[];
   /** True when the source file had no reliably-detected header row (xlsx) — a real signal, not a guess. */
   headerFound: boolean;
   /** How PDF content was actually read — absent for xlsx. 'ocr' means the PDF had no text layer at all. */

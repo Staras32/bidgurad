@@ -1,6 +1,6 @@
-import { parseEuNumber } from '@/lib/numberParser';
 import { uid } from '@/lib/uid';
 import type { BoqRow } from './types';
+import { ANCHOR_POSITION_TOKEN, POSITION_NUMBER, classifyBoqCandidate, type ExcludedLine } from './boqRowRules';
 
 /** A single word/text fragment positioned on a page. Y increases downward (screen/image convention). */
 export interface PositionedToken {
@@ -10,10 +10,6 @@ export interface PositionedToken {
   x2: number;
 }
 
-/** A real BOQ position number, e.g. "1.1", "2.11", "5.14." — always has a decimal part, unlike a bare quantity. */
-const DETAIL_TOKEN = /^(\d{1,2})[.,](\d{1,2})\.?$/;
-/** A bare section number, e.g. "1.", "6" — no decimal part. Tolerates a comma too (a common OCR misread of the period). */
-const SECTION_TOKEN = /^(\d{1,2})[.,]?$/;
 /** "TS-02", "TS-09" style reference codes — distinctive and reliably OCR'd. */
 const REFERENCE_TOKEN = /^ts-?\d{2,3}$/i;
 /** Pure numeric cell content (quantities), including EU decimal/composite forms like "637,0" or "1/0,3/0,2". */
@@ -72,7 +68,7 @@ interface ColumnAnchor {
  * itself is deliberately NOT one of these X-anchors — see extractPositionToken.
  */
 function detectColumnAnchors(tokens: PositionedToken[]): ColumnAnchor[] {
-  const positionMatches = tokens.filter((t) => DETAIL_TOKEN.test(t.text.trim()));
+  const positionMatches = tokens.filter((t) => ANCHOR_POSITION_TOKEN.test(t.text.trim()));
   const referenceMatches = tokens.filter((t) => REFERENCE_TOKEN.test(t.text.trim()));
   if (positionMatches.length < 2 || referenceMatches.length < 2) return [];
 
@@ -129,8 +125,7 @@ function detectColumnAnchors(tokens: PositionedToken[]): ColumnAnchor[] {
  */
 function extractPositionToken(row: PositionedToken[]): PositionedToken | null {
   for (const t of row) {
-    const text = t.text.trim();
-    if (DETAIL_TOKEN.test(text) || SECTION_TOKEN.test(text)) return t;
+    if (POSITION_NUMBER.test(t.text.trim())) return t;
   }
   return null;
 }
@@ -153,25 +148,14 @@ function assignRowToColumns(row: PositionedToken[], anchors: ColumnAnchor[]): Re
   };
 }
 
-function buildNotes(reference: string, quantityRaw: string, quantityParsed: number | null): string | null {
-  const parts: string[] = [];
-  if (reference) parts.push(`Nuoroda: ${reference}`);
-  if (quantityRaw && quantityParsed === null) parts.push(`Kiekis: ${quantityRaw}`);
-  return parts.length > 0 ? parts.join(' · ') : null;
-}
-
-interface ClassifiedRow {
+interface RawLine {
   position: string;
   name: string;
   cells: Record<ValueColumnKey, string>;
-  hasUnitOrQty: boolean;
-  tokenCount: number;
-  sectionMatch: RegExpExecArray | null;
-  detailMatch: RegExpExecArray | null;
 }
 
-function classifyRows(pagesTokens: PositionedToken[][], rowTolerance: number): ClassifiedRow[] {
-  const classified: ClassifiedRow[] = [];
+function classifyLines(pagesTokens: PositionedToken[][], rowTolerance: number): RawLine[] {
+  const lines: RawLine[] = [];
   let lastAnchors: ColumnAnchor[] = [];
 
   for (const rawPageTokens of pagesTokens) {
@@ -183,10 +167,10 @@ function classifyRows(pagesTokens: PositionedToken[][], rowTolerance: number): C
     if (anchors.length > 0) lastAnchors = anchors;
     if (activeAnchors.length === 0) continue;
 
-    // The header row (unreadable or not) always sits above the first real position/section row —
+    // The header row (unreadable or not) always sits above the first real position row —
     // skip anything above that line so garbled header text never merges into a previous page's row.
     const firstRowY = Math.min(
-      ...pageTokens.filter((t) => DETAIL_TOKEN.test(t.text.trim()) || SECTION_TOKEN.test(t.text.trim())).map((t) => t.y),
+      ...pageTokens.filter((t) => POSITION_NUMBER.test(t.text.trim())).map((t) => t.y),
       Infinity
     );
 
@@ -197,76 +181,97 @@ function classifyRows(pagesTokens: PositionedToken[][], rowTolerance: number): C
       const positionToken = extractPositionToken(row);
       const remainingRow = positionToken ? row.filter((t) => t !== positionToken) : row;
       const cells = assignRowToColumns(remainingRow, activeAnchors);
-      const position = positionToken ? positionToken.text.trim() : '';
-      const name = cells.name.trim();
-
-      classified.push({
-        position,
-        name,
-        cells,
-        hasUnitOrQty: Boolean(cells.unit.trim() || cells.quantity.trim()),
-        tokenCount: remainingRow.length,
-        sectionMatch: SECTION_TOKEN.exec(position),
-        detailMatch: DETAIL_TOKEN.exec(position),
-      });
+      lines.push({ position: positionToken ? positionToken.text.trim() : '', name: cells.name.trim(), cells });
     }
   }
-  return classified;
+  return lines;
+}
+
+export interface TableExtractionResult {
+  rows: Omit<BoqRow, 'packageId'>[];
+  excluded: ExcludedLine[];
 }
 
 /**
  * Reconstructs BOQ rows from positioned page tokens (from either a real PDF text layer or OCR words).
  * Column boundaries come from the body content's own geometry (position numbers, reference codes) rather
- * than header text, since bold header rows are often unreadable to OCR. Bare-integer rows are recognized
- * as section headers, validated by sequential numbering to reject unrelated tables (e.g. revision blocks).
- * Wrapped description lines are merged into the row above.
+ * than header text, since bold header rows are often unreadable to OCR.
+ *
+ * Groups each position-numbered line together with any wrapped continuation lines that follow it (until
+ * the next position number starts), then hands the assembled candidate to the shared rule-based validator.
+ * Every rejected line — section headers, document boilerplate, dates, incomplete rows — is reported back
+ * with a concrete reason rather than being silently dropped or guessed at. No AI, no scoring: fixed rules.
  */
-export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance = 6): Omit<BoqRow, 'packageId'>[] {
-  const classified = classifyRows(pagesTokens, rowTolerance);
+export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance = 6): TableExtractionResult {
+  const lines = classifyLines(pagesTokens, rowTolerance);
   const rows: Omit<BoqRow, 'packageId'>[] = [];
-  let lastSectionNumber = 0;
-  let currentSectionName: string | null = null;
-  let lastAcceptedRowIndex = -1;
+  const excluded: ExcludedLine[] = [];
 
-  for (const r of classified) {
-    if (r.detailMatch) {
-      const major = Number(r.detailMatch[1]);
-      if (major !== lastSectionNumber) continue; // not part of the current section — likely noise
-      const quantityRaw = r.cells.quantity.trim();
-      const quantityParsed = quantityRaw && !/[/\\]/.test(quantityRaw) ? parseEuNumber(quantityRaw) : NaN;
-      const quantity = Number.isFinite(quantityParsed) ? quantityParsed : null;
+  interface OpenCandidate {
+    position: string;
+    nameParts: string[];
+    unit: string;
+    quantityRaw: string;
+    reference: string;
+  }
+  let open: OpenCandidate | null = null;
+
+  const finalize = () => {
+    if (!open) return;
+    const result = classifyBoqCandidate({
+      position: open.position,
+      name: open.nameParts.join(' ').trim(),
+      unit: open.unit,
+      quantityRaw: open.quantityRaw,
+      reference: open.reference,
+    });
+    if ('accepted' in result) {
       rows.push({
         id: uid(),
-        positionNumber: r.position,
-        name: r.name,
-        unit: r.cells.unit.trim() || null,
-        quantity,
-        notes: buildNotes(r.cells.reference.trim(), quantityRaw, quantity),
-        rawSection: currentSectionName,
+        positionNumber: result.accepted.positionNumber,
+        name: result.accepted.name,
+        unit: result.accepted.unit,
+        quantity: result.accepted.quantity,
+        notes: result.accepted.reference ? `Nuoroda: ${result.accepted.reference}` : null,
+        rawSection: null,
       });
-      lastAcceptedRowIndex = rows.length - 1;
+    } else {
+      excluded.push(result.rejected);
+    }
+    open = null;
+  };
+
+  for (const line of lines) {
+    if (line.position) {
+      finalize();
+      open = { position: line.position, nameParts: [line.name], unit: line.cells.unit, quantityRaw: line.cells.quantity, reference: line.cells.reference };
       continue;
     }
 
-    if (r.sectionMatch && r.name && !r.hasUnitOrQty && r.tokenCount <= 10) {
-      const num = Number(r.sectionMatch[1]);
-      if (num === lastSectionNumber + 1) {
-        lastSectionNumber = num;
-        currentSectionName = r.name;
-      }
-      // Either accepted as the next section, or ignored as noise (e.g. a revision-table "0").
+    const combined = [line.name, line.cells.unit, line.cells.quantity, line.cells.reference].filter(Boolean).join(' ').trim();
+    if (!combined) continue; // truly empty — not worth reporting
+
+    const noise = classifyBoqCandidate({ position: '', name: line.name, unit: '', quantityRaw: '' });
+    const isKnownNoise = 'rejected' in noise && (noise.rejected.reason === 'Dokumento antraštė / žymėjimas' || noise.rejected.reason === 'Data' || noise.rejected.reason === 'Puslapio / dokumento žyma');
+
+    if (isKnownNoise) {
+      excluded.push({ raw: combined, reason: (noise as { rejected: ExcludedLine }).rejected.reason });
       continue;
     }
 
-    // Continuation of a wrapped description line: no position number, no unit/qty/reference, just more
-    // name text. Bounded by token count and target length so unrelated noise can't snowball into one row.
-    if (
-      !r.position && !r.hasUnitOrQty && !r.cells.reference.trim() && r.name && r.tokenCount <= 10 &&
-      lastAcceptedRowIndex >= 0 && rows[lastAcceptedRowIndex].name.length <= 200
-    ) {
-      rows[lastAcceptedRowIndex].name = `${rows[lastAcceptedRowIndex].name} ${r.name}`.trim();
+    // Plausible continuation of the open candidate's wrapped description / trailing unit-qty-reference —
+    // bounded so unrelated noise can't snowball an unrelated line into a real position indefinitely.
+    if (open && open.nameParts.join(' ').length <= 200 && line.name.length <= 200) {
+      if (line.name) open.nameParts.push(line.name);
+      if (!open.unit && line.cells.unit) open.unit = line.cells.unit;
+      if (!open.quantityRaw && line.cells.quantity) open.quantityRaw = line.cells.quantity;
+      if (!open.reference && line.cells.reference) open.reference = line.cells.reference;
+      continue;
     }
+
+    excluded.push({ raw: combined, reason: 'Nėra pozicijos numerio' });
   }
+  finalize();
 
-  return rows;
+  return { rows, excluded };
 }

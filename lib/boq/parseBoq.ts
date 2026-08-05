@@ -1,8 +1,8 @@
 import * as XLSX from 'xlsx';
 import { uid } from '@/lib/uid';
-import { parseEuNumber } from '@/lib/numberParser';
-import type { BoqFileType, BoqParseResult, BoqRow } from './types';
+import type { BoqFileType, BoqParseResult, BoqRow, ExcludedBoqLine } from './types';
 import { extractBoqTable, type PositionedToken } from './reconstructTable';
+import { classifyBoqCandidate } from './boqRowRules';
 import { ocrPdfPages, type OcrProgress } from './ocrPdf';
 
 type Row = (string | number | undefined)[];
@@ -60,9 +60,38 @@ function cellText(row: Row, col: number): string | null {
   return s ? s : null;
 }
 
-function rowsFromSheet(allRows: Row[]): Omit<BoqRow, 'packageId'>[] {
+interface SheetExtraction {
+  rows: Omit<BoqRow, 'packageId'>[];
+  excluded: ExcludedBoqLine[];
+}
+
+/**
+ * Runs every candidate row through the same deterministic, rule-based BOQ-line classifier used for PDFs:
+ * a row only becomes a real BOQ position when it has a position number, description, unit, AND quantity.
+ * Everything else — section headers, boilerplate, incomplete rows — is reported as excluded, not guessed at.
+ */
+function rowsFromSheet(allRows: Row[]): SheetExtraction {
   const headerIdx = findBoqHeaderRow(allRows);
   const headerFound = headerIdx !== -1;
+  const rows: Omit<BoqRow, 'packageId'>[] = [];
+  const excluded: ExcludedBoqLine[] = [];
+
+  const classify = (position: string, name: string, unit: string, quantityRaw: string, notesRaw: string | null, rawSection: string | null) => {
+    const result = classifyBoqCandidate({ position, name, unit, quantityRaw });
+    if ('accepted' in result) {
+      rows.push({
+        id: uid(),
+        positionNumber: result.accepted.positionNumber,
+        name: result.accepted.name,
+        unit: result.accepted.unit,
+        quantity: result.accepted.quantity,
+        notes: notesRaw,
+        rawSection,
+      });
+    } else {
+      excluded.push(result.rejected);
+    }
+  };
 
   if (headerFound) {
     const headerRow = allRows[headerIdx];
@@ -80,47 +109,28 @@ function rowsFromSheet(allRows: Row[]): Omit<BoqRow, 'packageId'>[] {
       .filter((r) => r.some((c) => c !== undefined && String(c).trim() !== ''));
 
     if (cols.name === -1) {
-      // No confidently-detected name column — fall back to raw-line rows below,
-      // same as the no-header case, rather than guessing which column is which.
-      return rawLineRows(dataRows);
+      // No confidently-detected name column — nothing to reliably classify against.
+      for (const r of dataRows) {
+        const raw = r.map((c) => (c == null ? '' : String(c).trim())).filter(Boolean).join(' — ');
+        if (raw) excluded.push({ raw, reason: 'Nepavyko atpažinti stulpelių' });
+      }
+      return { rows, excluded };
     }
 
-    return dataRows
-      .filter((r) => cellText(r, cols.name))
-      .map((r) => {
-        const qtyRaw = cols.quantity >= 0 ? r[cols.quantity] : undefined;
-        const qty = qtyRaw == null || qtyRaw === '' ? null : parseEuNumber(qtyRaw);
-        return {
-          id: uid(),
-          positionNumber: cellText(r, cols.position),
-          name: cellText(r, cols.name) ?? '',
-          unit: cellText(r, cols.unit),
-          quantity: qty != null && !Number.isNaN(qty) ? qty : null,
-          notes: cellText(r, cols.notes),
-          rawSection: cellText(r, cols.section),
-        };
-      });
+    for (const r of dataRows) {
+      const qtyRaw = cols.quantity >= 0 ? cellText(r, cols.quantity) ?? '' : '';
+      classify(cellText(r, cols.position) ?? '', cellText(r, cols.name) ?? '', cellText(r, cols.unit) ?? '', qtyRaw, cellText(r, cols.notes), cellText(r, cols.section));
+    }
+    return { rows, excluded };
   }
 
-  // No header confidently detected anywhere in the file — every row becomes a
-  // name-only position built from its own real cell content. Nothing invented.
+  // No header confidently detected — nothing to map columns from, so every non-empty row is excluded.
   const dataRows = allRows.filter((r) => r.some((c) => c !== undefined && String(c).trim() !== ''));
-  return rawLineRows(dataRows);
-}
-
-function rawLineRows(rows: Row[]): Omit<BoqRow, 'packageId'>[] {
-  return rows
-    .map((r) => r.map((c) => (c == null ? '' : String(c).trim())).filter(Boolean).join(' — '))
-    .filter(Boolean)
-    .map((name) => ({
-      id: uid(),
-      positionNumber: null,
-      name,
-      unit: null,
-      quantity: null,
-      notes: null,
-      rawSection: null,
-    }));
+  for (const r of dataRows) {
+    const raw = r.map((c) => (c == null ? '' : String(c).trim())).filter(Boolean).join(' — ');
+    if (raw) excluded.push({ raw, reason: 'Antraštės eilutė neaptikta' });
+  }
+  return { rows, excluded };
 }
 
 async function parseXlsx(file: File): Promise<BoqParseResult> {
@@ -129,63 +139,51 @@ async function parseXlsx(file: File): Promise<BoqParseResult> {
     const workbook = XLSX.read(buffer, { type: 'array' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) {
-      return { fileType: 'xlsx', rows: [], headerFound: false, error: 'Šiame faile nerasta nuskaitomo lapo.' };
+      return { fileType: 'xlsx', rows: [], excluded: [], headerFound: false, error: 'Šiame faile nerasta nuskaitomo lapo.' };
     }
     const allRows = XLSX.utils.sheet_to_json<Row>(sheet, { header: 1, blankrows: false });
     if (allRows.length === 0) {
-      return { fileType: 'xlsx', rows: [], headerFound: false, error: 'Šis failas atrodo tuščias.' };
+      return { fileType: 'xlsx', rows: [], excluded: [], headerFound: false, error: 'Šis failas atrodo tuščias.' };
     }
     const headerIdx = findBoqHeaderRow(allRows);
-    const rows = rowsFromSheet(allRows);
+    const { rows, excluded } = rowsFromSheet(allRows);
     if (rows.length === 0) {
-      return { fileType: 'xlsx', rows: [], headerFound: headerIdx !== -1, error: 'Šiame faile nerasta BOQ pozicijų.' };
+      return { fileType: 'xlsx', rows: [], excluded, headerFound: headerIdx !== -1, error: 'Šiame faile nerasta BOQ pozicijų.' };
     }
-    return { fileType: 'xlsx', rows, headerFound: headerIdx !== -1 };
+    return { fileType: 'xlsx', rows, excluded, headerFound: headerIdx !== -1 };
   } catch {
-    return { fileType: 'xlsx', rows: [], headerFound: false, error: 'Nepavyko nuskaityti failo. Patikrink, ar tai tinkamas Excel failas.' };
+    return { fileType: 'xlsx', rows: [], excluded: [], headerFound: false, error: 'Nepavyko nuskaityti failo. Patikrink, ar tai tinkamas Excel failas.' };
   }
 }
 
-const POSITION_PREFIX = /^\s*(\d+(?:\.\d+)*)[.)]?\s+/;
+const POSITION_PREFIX = /^\s*(\d{1,2}(?:\.\d{1,2}){0,4})\.?\s+/;
 const TRAILING_QTY_UNIT = /(\d+[.,]?\d*)\s*(vnt\.?|m2|m²|m3|m³|kv\.?\s?m\.?|kub\.?\s?m\.?|kg|t\.?|val\.?|m\.?p\.?|m)\s*$/i;
 
-function parsePdfLineToRow(line: string): Omit<BoqRow, 'packageId'> | null {
+function parsePdfLineToCandidate(line: string): { position: string; name: string; unit: string; quantityRaw: string } | null {
   const trimmed = line.trim();
   if (trimmed.length < 3) return null;
   if (/^(puslapis|page)\s*\d+/i.test(trimmed)) return null;
   if (/^\d+\s*\/\s*\d+$/.test(trimmed)) return null;
 
   let rest = trimmed;
-  let positionNumber: string | null = null;
+  let position = '';
   const posMatch = rest.match(POSITION_PREFIX);
   if (posMatch) {
-    positionNumber = posMatch[1];
+    position = posMatch[1];
     rest = rest.slice(posMatch[0].length);
   }
 
-  let unit: string | null = null;
-  let quantity: number | null = null;
+  let unit = '';
+  let quantityRaw = '';
   const qtyMatch = rest.match(TRAILING_QTY_UNIT);
   if (qtyMatch) {
-    const qty = parseEuNumber(qtyMatch[1]);
-    if (!Number.isNaN(qty)) {
-      quantity = qty;
-      unit = qtyMatch[2].replace(/\s+/g, ' ');
-      rest = rest.slice(0, qtyMatch.index).trim();
-    }
+    quantityRaw = qtyMatch[1];
+    unit = qtyMatch[2].replace(/\s+/g, ' ');
+    rest = rest.slice(0, qtyMatch.index).trim();
   }
 
-  if (!rest) return null;
-
-  return {
-    id: uid(),
-    positionNumber,
-    name: rest,
-    unit,
-    quantity,
-    notes: null,
-    rawSection: null,
-  };
+  if (!rest && !position) return null;
+  return { position, name: rest, unit, quantityRaw };
 }
 
 async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => void): Promise<BoqParseResult> {
@@ -231,28 +229,46 @@ async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => v
     return {
       fileType: 'pdf',
       rows: [],
+      excluded: [],
       headerFound: false,
       error: 'Nepavyko nuskaityti šio PDF. Patikrink, ar jame yra pažymimas tekstas (ne nuskenuotas vaizdas).',
     };
   }
 
   if (totalChars > 0) {
-    const structuredRows = extractBoqTable(pagesTextTokens);
-    if (structuredRows.length > 0) {
-      return { fileType: 'pdf', rows: structuredRows, headerFound: true, pdfExtractionMethod: 'text' };
+    const structured = extractBoqTable(pagesTextTokens);
+    if (structured.rows.length > 0) {
+      return { fileType: 'pdf', rows: structured.rows, excluded: structured.excluded, headerFound: true, pdfExtractionMethod: 'text' };
     }
 
-    const legacyRows = pagesLines
-      .flat()
-      .map(parsePdfLineToRow)
-      .filter((r): r is Omit<BoqRow, 'packageId'> => r !== null);
+    const legacyExcluded: ExcludedBoqLine[] = [];
+    const legacyRows: Omit<BoqRow, 'packageId'>[] = [];
+    for (const line of pagesLines.flat()) {
+      const candidate = parsePdfLineToCandidate(line);
+      if (!candidate) continue;
+      const result = classifyBoqCandidate(candidate);
+      if ('accepted' in result) {
+        legacyRows.push({
+          id: uid(),
+          positionNumber: result.accepted.positionNumber,
+          name: result.accepted.name,
+          unit: result.accepted.unit,
+          quantity: result.accepted.quantity,
+          notes: null,
+          rawSection: null,
+        });
+      } else {
+        legacyExcluded.push(result.rejected);
+      }
+    }
     if (legacyRows.length > 0) {
-      return { fileType: 'pdf', rows: legacyRows, headerFound: false, pdfExtractionMethod: 'text' };
+      return { fileType: 'pdf', rows: legacyRows, excluded: legacyExcluded, headerFound: false, pdfExtractionMethod: 'text' };
     }
 
     return {
       fileType: 'pdf',
       rows: [],
+      excluded: [...structured.excluded, ...legacyExcluded],
       headerFound: false,
       error: 'Iš šio PDF nepavyko ištraukti BOQ pozicijų. Failas turi teksto sluoksnį, bet jame neaptikta atpažįstamų pozicijų.',
     };
@@ -261,21 +277,23 @@ async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => v
   // No text layer at all — this PDF's content is vector paths/outlines, not real glyphs. OCR is the only option.
   try {
     const pagesOcrTokens = await ocrPdfPages(file, onOcrProgress);
-    const ocrRows = extractBoqTable(pagesOcrTokens, 18);
-    if (ocrRows.length === 0) {
+    const ocrResult = extractBoqTable(pagesOcrTokens, 18);
+    if (ocrResult.rows.length === 0) {
       return {
         fileType: 'pdf',
         rows: [],
+        excluded: ocrResult.excluded,
         headerFound: false,
         pdfExtractionMethod: 'ocr',
         error: 'Iš šio PDF nepavyko ištraukti BOQ pozicijų. Galimai tai nuskenuotas vaizdas be pažymimo teksto.',
       };
     }
-    return { fileType: 'pdf', rows: ocrRows, headerFound: true, pdfExtractionMethod: 'ocr' };
+    return { fileType: 'pdf', rows: ocrResult.rows, excluded: ocrResult.excluded, headerFound: true, pdfExtractionMethod: 'ocr' };
   } catch {
     return {
       fileType: 'pdf',
       rows: [],
+      excluded: [],
       headerFound: false,
       error: 'Nepavyko atpažinti šio PDF teksto (OCR nepavyko). Patikrink, ar failas nėra pažeistas.',
     };
@@ -292,7 +310,7 @@ export async function parseBoqFile(file: File, onOcrProgress?: (progress: OcrPro
   if (ext === 'xlsx' || ext === 'xls') return parseXlsx(file);
   if (ext === 'pdf') return parsePdf(file, onOcrProgress);
   const fileType: BoqFileType = 'unknown';
-  return { fileType, rows: [], headerFound: false, error: 'Nepalaikomas failo tipas. Įkelk Excel arba PDF failą.' };
+  return { fileType, rows: [], excluded: [], headerFound: false, error: 'Nepalaikomas failo tipas. Įkelk Excel arba PDF failą.' };
 }
 
 export type { OcrProgress };

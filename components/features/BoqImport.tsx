@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   AlertTriangle,
   Check,
+  CheckCircle2,
   GripVertical,
   ListChecks,
   Pencil,
@@ -39,9 +40,9 @@ import { uid } from '@/lib/uid';
 import { storage } from '@/lib/storage';
 import { parseBoqFile, type OcrProgress } from '@/lib/boq/parseBoq';
 import { buildWorkPackages, OTHER_PACKAGE_NAME } from '@/lib/boq/classify';
-import type { BoqFileType, BoqRow, WorkPackage } from '@/lib/boq/types';
+import type { BoqFileType, BoqRow, ExcludedBoqLine, WorkPackage } from '@/lib/boq/types';
 
-type ImportStatus = 'idle' | 'reading' | 'ready' | 'error';
+type ImportStatus = 'idle' | 'reading' | 'review' | 'ready' | 'error';
 
 const selectClass =
   'h-8 rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-700 transition-colors duration-150 ease-out hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500';
@@ -62,6 +63,9 @@ export function BoqImport() {
   const [error, setError] = useState<string | null>(null);
   const [pdfExtractionMethod, setPdfExtractionMethod] = useState<'text' | 'ocr' | undefined>(undefined);
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
+
+  const [pendingRows, setPendingRows] = useState<Omit<BoqRow, 'packageId'>[]>([]);
+  const [excludedLines, setExcludedLines] = useState<ExcludedBoqLine[]>([]);
 
   const [packages, setPackages] = useState<WorkPackage[]>([]);
   const [rows, setRows] = useState<BoqRow[]>([]);
@@ -100,7 +104,13 @@ export function BoqImport() {
       return;
     }
 
-    const built = buildWorkPackages(result.rows, uid);
+    setPendingRows(result.rows);
+    setExcludedLines(result.excluded);
+    setStatus('review');
+  };
+
+  const confirmImport = () => {
+    const built = buildWorkPackages(pendingRows, uid);
     setPackages(built.packages);
     setRows(built.rows);
     setUsedFileSections(built.usedFileSections);
@@ -115,6 +125,8 @@ export function BoqImport() {
     setError(null);
     setOcrProgress(null);
     setPdfExtractionMethod(undefined);
+    setPendingRows([]);
+    setExcludedLines([]);
     setPackages([]);
     setRows([]);
     setSelectedPackageId(null);
@@ -257,12 +269,52 @@ export function BoqImport() {
                     <p className="text-xs text-gray-400">
                       {ocrProgress
                         ? `OCR atpažinimas: ${ocrProgress.page}/${ocrProgress.totalPages} psl. (${ocrProgress.stage === 'render' ? 'ruošiama' : 'atpažįstama'})…`
-                        : 'Skaitomos pozicijos ir aptinkami darbų paketai…'}
+                        : 'Ieškoma BOQ pozicijų…'}
                     </p>
                   </div>
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {status === 'review' && (
+            <div className="animate-fade-in space-y-4">
+              <Alert variant="success" title={`Aptikta ${pendingRows.length.toLocaleString('lt-LT')} galimos BOQ pozicijos`}>
+                Kiekviena pozicija turi pozicijos numerį, aprašymą, mato vienetą ir kiekį. Prieš tęsiant peržiūrėk, kas
+                buvo neįtraukta.
+              </Alert>
+
+              {excludedLines.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Neįtrauktos {excludedLines.length.toLocaleString('lt-LT')} dokumento eilutės</CardTitle>
+                    <CardDescription>Šios eilutės neturėjo visų reikalingų BOQ lauko reikšmių, todėl nebuvo importuotos.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="!p-0">
+                    <div className="max-h-80 divide-y divide-gray-100 overflow-y-auto">
+                      {excludedLines.map((line, idx) => (
+                        <div key={idx} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                          <Badge variant="neutral" className="mt-0.5 shrink-0">
+                            {line.reason}
+                          </Badge>
+                          <span className="min-w-0 flex-1 truncate text-gray-600">{line.raw}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Button variant="primary" size="lg" onClick={confirmImport} disabled={pendingRows.length === 0}>
+                  <CheckCircle2 size={18} aria-hidden />
+                  Patvirtinti importą
+                </Button>
+                <Button variant="secondary" size="lg" onClick={startOver}>
+                  Importuoti kitą failą
+                </Button>
+              </div>
+            </div>
           )}
 
           {status === 'error' && (
