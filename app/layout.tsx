@@ -10,9 +10,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'BidGuard – Subrangovų pasiūlymų rizikos analizė',
+  title: 'BidGuard – konkursinių sąmatų ir pasiūlymų rizikos valdymas',
   description:
-    'Sistema, kuri parodo, kuris subrangovo pasiūlymas realiai rizikingas – nepriklausomai nuo to, kuris pigiausias.',
+    'Išmani BOQ analizė, konkursinių sąmatų valdymas ir subrangovų pasiūlymų rizikos kontrolė.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
