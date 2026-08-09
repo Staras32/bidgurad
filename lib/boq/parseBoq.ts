@@ -174,7 +174,7 @@ async function parseXlsx(file: File): Promise<BoqParseResult> {
 const POSITION_PREFIX = /^\s*(\d{1,2}(?:\.\d{1,2}){0,4})\.?\s+/;
 const TRAILING_QTY_UNIT = /(\d+[.,]?\d*)\s*(vnt\.?|kompl\.?|komplektas|m2|m²|m3|m³|kv\.?\s?m\.?|kub\.?\s?m\.?|kg|t\.?|val\.?|m\.?p\.?|m)\s*$/i;
 
-function parsePdfLineToCandidate(line: string): { position: string; name: string; unit: string; quantityRaw: string } | null {
+export function parsePdfLineToCandidate(line: string): { position: string; name: string; unit: string; quantityRaw: string } | null {
   const trimmed = line.trim();
   if (trimmed.length < 3) return null;
   if (/^(puslapis|page)\s*\d+/i.test(trimmed)) return null;

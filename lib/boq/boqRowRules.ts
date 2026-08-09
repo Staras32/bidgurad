@@ -31,7 +31,9 @@ const LETTER = /[a-ząčęėįšųūž]/i;
  * maintaining a brittle whitelist that would silently discard units such as kg/m, 100 m or pora. */
 const UNIT_TOKEN = /^(?=.{1,16}$)(?=.*(?:[a-ząčęėįšųūž]|%))[a-ząčęėįšųūž0-9²³%./'’-]+$/i;
 
-const DATE_ONLY = /^\d{4}[-.]\d{1,2}[-.]\d{1,2}\.?$|^\d{1,2}[-./]\d{1,2}[-./]\d{2,4}\.?$/;
+// Two-digit years are intentionally not treated as dates: values such as 12.03.26 are valid,
+// common BOQ hierarchy codes and must not be discarded without stronger date context.
+const DATE_ONLY = /^\d{4}[-.]\d{1,2}[-.]\d{1,2}\.?$|^\d{1,2}[-./]\d{1,2}[-./]\d{4}\.?$/;
 const PAGE_OR_DOC_FURNITURE = /^(puslapis|page|lapas|lapų|psl\.?|laida)\s*[:.]?\s*\d*$/i;
 
 export interface CandidateFields {
