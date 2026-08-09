@@ -25,7 +25,7 @@ const BOILERPLATE_PATTERNS = [
   /\bdokument(?:o|ą)\s+(?:parengė|sudarė|pavadinimas)\b/i,
 ];
 
-const TOTAL_LINE = /^(?:iš\s+viso|viso|tarpin[ėe]\s+suma|bendra\s+suma|subtotal|total)\b/i;
+const TOTAL_LINE = /^(?:i[šs]\s+viso|viso|tarpin[ėe]\s+suma|bendra\s+suma|subtotal|total)\b/i;
 const LETTER = /[a-ząčęėįšųūž]/i;
 /** Construction BOQs contain many legitimate project-specific units. Validate their shape instead of
  * maintaining a brittle whitelist that would silently discard units such as kg/m, 100 m or pora. */
