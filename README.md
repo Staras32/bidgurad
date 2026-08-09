@@ -33,6 +33,19 @@ cp .env.example .env.local
 npm run dev
 ```
 
+## Paskyros ir projektų saugykla
+
+BidGuard naudoja Supabase autentifikacijai ir vartotojui priklausantiems BOQ projektams.
+
+1. Sukurkite Supabase projektą.
+2. SQL Editor lange paleiskite `supabase/migrations/001_projects.sql`.
+3. Vercel projekto aplinkos kintamuosiuose pridėkite:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+4. Supabase Authentication URL Configuration pridėkite produkcijos adresą `https://bidguard.eu`.
+
+Kol šie kintamieji nenustatyti, BOQ importas ir vietinis juodraščio išsaugojimas veikia, tačiau registracija bei debesies projektai lieka išjungti.
+
 Atidaryk `http://localhost:3000`.
 
 ## Diegimas į Vercel

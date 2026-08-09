@@ -11,15 +11,18 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
       - name: Verify deterministic BOQ rules
-        run: npx --yes tsx scripts/verify-boq-rules.ts
+        run: pnpm exec tsx scripts/verify-boq-rules.ts
       - name: Verify OCR table reconstruction
-        run: npx --yes tsx scripts/verify-ocr-fixture.ts
+        run: pnpm exec tsx scripts/verify-ocr-fixture.ts
       - name: Verify work package operations
-        run: npx --yes tsx scripts/verify-work-packages.ts
+        run: pnpm exec tsx scripts/verify-work-packages.ts

@@ -1,7 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import {
   AlertTriangle,
   CircleAlert,
@@ -18,6 +20,7 @@ import {
   ShieldCheck,
   Trash2,
   Undo2,
+  UserRound,
 } from 'lucide-react';
 
 import {
@@ -45,6 +48,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { uid } from '@/lib/uid';
 import { storage } from '@/lib/storage';
+import { getSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { parseBoqFile, type OcrProgress } from '@/lib/boq/parseBoq';
 import { buildWorkPackages, OTHER_PACKAGE_NAME } from '@/lib/boq/classify';
 import type { BoqFileType, BoqRow, ExcludedBoqLine, WorkPackage } from '@/lib/boq/types';
@@ -69,6 +73,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export function BoqImport() {
+  const router = useRouter();
   const [status, setStatus] = useState<ImportStatus>('idle');
   const [fileName, setFileName] = useState('');
   const [fileSize, setFileSize] = useState(0);
@@ -101,6 +106,53 @@ export function BoqImport() {
 
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState('');
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    let active = true;
+    const initialize = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!active) return;
+      setUserEmail(data.user?.email ?? null);
+
+      const requestedProjectId = new URLSearchParams(window.location.search).get('project');
+      if (!requestedProjectId || !data.user) return;
+      const { data: project, error: loadError } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', requestedProjectId)
+        .single();
+      if (!active) return;
+      if (loadError || !project) {
+        setSaveError('Nepavyko atidaryti projekto arba neturite prieigos.');
+        return;
+      }
+
+      setProjectId(project.id);
+      setProjectName(project.name);
+      setFileName(project.source_file_name);
+      setFileSize(project.source_file_size);
+      setPackages(project.packages as WorkPackage[]);
+      setRows(project.rows as BoqRow[]);
+      setSelectedPackageId((project.packages as WorkPackage[])[0]?.id ?? null);
+      setStatus('ready');
+    };
+    void initialize();
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (active) setUserEmail(session?.user.email ?? null);
+    });
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
 
   const handleFile = async (files: FileList) => {
     const file = files[0];
@@ -138,6 +190,8 @@ export function BoqImport() {
     setSelectedRowIds(new Set());
     setPackageHistory([]);
     setPackageNameError('');
+    setProjectId(null);
+    setProjectName(fileName.replace(/\.[^.]+$/, '') || 'Naujas BOQ projektas');
     setStatus('ready');
   };
 
@@ -334,15 +388,47 @@ export function BoqImport() {
     setSelectedPackageId(nextPackages[0]?.id ?? null);
   };
 
-  const saveWorkPackages = () => {
+  const saveWorkPackages = async () => {
     setSaving(true);
+    setSaveError('');
     try {
       storage.set(
         'boq-work-packages:current',
         JSON.stringify({ savedAt: Date.now(), fileName, packages, rows })
       );
+
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase || !userEmail) {
+        setSavedNotice(true);
+        if (isSupabaseConfigured()) router.push('/auth');
+        return;
+      }
+
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) {
+        router.push('/auth');
+        return;
+      }
+
+      const payload = {
+        owner_id: auth.user.id,
+        name: projectName.trim() || fileName.replace(/\.[^.]+$/, '') || 'BOQ projektas',
+        source_file_name: fileName,
+        source_file_size: fileSize,
+        packages,
+        rows,
+      };
+      const query = projectId
+        ? supabase.from('projects').update(payload).eq('id', projectId).select('id').single()
+        : supabase.from('projects').insert(payload).select('id').single();
+      const { data, error: cloudError } = await query;
+      if (cloudError) throw cloudError;
+      setProjectId(data.id);
+      window.history.replaceState(null, '', `/?project=${data.id}`);
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 2500);
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : 'Nepavyko išsaugoti projekto.');
     } finally {
       setSaving(false);
     }
@@ -365,6 +451,12 @@ export function BoqImport() {
             <span className="hidden text-xs text-gray-400 md:inline">BOQ yra pagrindinis tiesos šaltinis</span>
             <Link href="/supplier-quotes" className="text-xs font-medium text-gray-500 transition-colors hover:text-primary-600">
               Pasiūlymų analizė
+            </Link>
+            <Link
+              href={userEmail ? '/projects' : '/auth'}
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50"
+            >
+              <UserRound size={14} /> {userEmail ? 'Mano projektai' : 'Prisijungti'}
             </Link>
           </div>
         </div>
@@ -639,6 +731,7 @@ export function BoqImport() {
 
           {status === 'ready' && (
             <div className="animate-fade-in space-y-5 pb-28">
+              {saveError && <Alert variant="error" title="Projekto saugojimas">{saveError}</Alert>}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                   <Badge variant="neutral">{fileName}</Badge>
@@ -954,12 +1047,23 @@ export function BoqImport() {
           <div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <AlertTriangle size={13} className="shrink-0 text-gray-300" aria-hidden />
-              Kol kas išsaugoma tik šiame naršyklės profilyje.
+              {userEmail ? `Projektas saugomas paskyroje ${userEmail}` : 'Juodraštis saugomas šiame įrenginyje. Prisijunkite išsaugojimui debesyje.'}
             </div>
-            <Button variant="primary" size="lg" onClick={saveWorkPackages} isLoading={saving} className="w-full sm:w-auto">
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              {userEmail && (
+                <Input
+                  value={projectName}
+                  onChange={(event) => setProjectName(event.target.value)}
+                  aria-label="Projekto pavadinimas"
+                  placeholder="Projekto pavadinimas"
+                  className="h-11"
+                />
+              )}
+              <Button variant="primary" size="lg" onClick={saveWorkPackages} isLoading={saving} className="w-full sm:w-auto">
               {!saving && <Save size={18} aria-hidden />}
-              {savedNotice ? 'Išsaugota ✓' : 'Išsaugoti darbų paketus'}
-            </Button>
+              {savedNotice ? 'Išsaugota ✓' : userEmail ? 'Išsaugoti projektą' : 'Prisijungti ir išsaugoti'}
+              </Button>
+            </div>
           </div>
         </footer>
       )}
