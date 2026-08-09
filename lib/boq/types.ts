@@ -7,6 +7,8 @@ export interface BoqRow {
   notes: string | null;
   /** Section value as literally found in the source file, if the file had one. */
   rawSection: string | null;
+  /** Human-readable source location used to audit extraction (for example "Lapas1, 24 eil." or "PDF, 3 psl."). */
+  sourceReference: string | null;
   /** Current work package assignment — mutable via rename/merge/split/drag & drop. */
   packageId: string;
 }
@@ -24,6 +26,7 @@ export type BoqFileType = 'xlsx' | 'pdf' | 'unknown';
 export interface ExcludedBoqLine {
   raw: string;
   reason: string;
+  sourceReference?: string | null;
 }
 
 export interface BoqParseResult {

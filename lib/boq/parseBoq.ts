@@ -70,14 +70,14 @@ interface SheetExtraction {
  * a row only becomes a real BOQ position when it has a position number, description, unit, AND quantity.
  * Everything else — section headers, boilerplate, incomplete rows — is reported as excluded, not guessed at.
  */
-function rowsFromSheet(allRows: Row[]): SheetExtraction {
+function rowsFromSheet(allRows: Row[], sheetName: string): SheetExtraction {
   const headerIdx = findBoqHeaderRow(allRows);
   const headerFound = headerIdx !== -1;
   const rows: Omit<BoqRow, 'packageId'>[] = [];
   const excluded: ExcludedBoqLine[] = [];
 
-  const classify = (position: string, name: string, unit: string, quantityRaw: string, notesRaw: string | null, rawSection: string | null) => {
-    const result = classifyBoqCandidate({ position, name, unit, quantityRaw });
+  const classify = (position: string, name: string, unit: string, quantityRaw: string, notesRaw: string | null, rawSection: string | null, sourceReference: string) => {
+    const result = classifyBoqCandidate({ position, name, unit, quantityRaw, sourceReference });
     if ('accepted' in result) {
       rows.push({
         id: uid(),
@@ -87,9 +87,10 @@ function rowsFromSheet(allRows: Row[]): SheetExtraction {
         quantity: result.accepted.quantity,
         notes: notesRaw,
         rawSection,
+        sourceReference: result.accepted.sourceReference,
       });
     } else {
-      excluded.push(result.rejected);
+      excluded.push({ ...result.rejected, sourceReference });
     }
   };
 
@@ -105,30 +106,31 @@ function rowsFromSheet(allRows: Row[]): SheetExtraction {
     };
 
     const dataRows = allRows
+      .map((row, index) => ({ row, index }))
       .slice(headerIdx + 1)
-      .filter((r) => r.some((c) => c !== undefined && String(c).trim() !== ''));
+      .filter(({ row }) => row.some((c) => c !== undefined && String(c).trim() !== ''));
 
     if (cols.name === -1) {
       // No confidently-detected name column — nothing to reliably classify against.
-      for (const r of dataRows) {
+      for (const { row: r, index } of dataRows) {
         const raw = r.map((c) => (c == null ? '' : String(c).trim())).filter(Boolean).join(' — ');
-        if (raw) excluded.push({ raw, reason: 'Nepavyko atpažinti stulpelių' });
+        if (raw) excluded.push({ raw, reason: 'Nepavyko atpažinti stulpelių', sourceReference: `${sheetName}, ${index + 1} eil.` });
       }
       return { rows, excluded };
     }
 
-    for (const r of dataRows) {
+    for (const { row: r, index } of dataRows) {
       const qtyRaw = cols.quantity >= 0 ? cellText(r, cols.quantity) ?? '' : '';
-      classify(cellText(r, cols.position) ?? '', cellText(r, cols.name) ?? '', cellText(r, cols.unit) ?? '', qtyRaw, cellText(r, cols.notes), cellText(r, cols.section));
+      classify(cellText(r, cols.position) ?? '', cellText(r, cols.name) ?? '', cellText(r, cols.unit) ?? '', qtyRaw, cellText(r, cols.notes), cellText(r, cols.section), `${sheetName}, ${index + 1} eil.`);
     }
     return { rows, excluded };
   }
 
   // No header confidently detected — nothing to map columns from, so every non-empty row is excluded.
   const dataRows = allRows.filter((r) => r.some((c) => c !== undefined && String(c).trim() !== ''));
-  for (const r of dataRows) {
+  for (const [index, r] of dataRows.entries()) {
     const raw = r.map((c) => (c == null ? '' : String(c).trim())).filter(Boolean).join(' — ');
-    if (raw) excluded.push({ raw, reason: 'Antraštės eilutė neaptikta' });
+    if (raw) excluded.push({ raw, reason: 'Antraštės eilutė neaptikta', sourceReference: `${sheetName}, ${index + 1} eil.` });
   }
   return { rows, excluded };
 }
@@ -137,20 +139,33 @@ async function parseXlsx(file: File): Promise<BoqParseResult> {
   try {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    if (!sheet) {
+    if (workbook.SheetNames.length === 0) {
       return { fileType: 'xlsx', rows: [], excluded: [], headerFound: false, error: 'Šiame faile nerasta nuskaitomo lapo.' };
     }
-    const allRows = XLSX.utils.sheet_to_json<Row>(sheet, { header: 1, blankrows: false });
-    if (allRows.length === 0) {
+    const rows: Omit<BoqRow, 'packageId'>[] = [];
+    const excluded: ExcludedBoqLine[] = [];
+    let headerFound = false;
+    let readableSheetFound = false;
+
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+      const allRows = XLSX.utils.sheet_to_json<Row>(sheet, { header: 1, blankrows: false });
+      if (allRows.length === 0) continue;
+      readableSheetFound = true;
+      if (findBoqHeaderRow(allRows) !== -1) headerFound = true;
+      const extracted = rowsFromSheet(allRows, sheetName);
+      rows.push(...extracted.rows);
+      excluded.push(...extracted.excluded);
+    }
+
+    if (!readableSheetFound) {
       return { fileType: 'xlsx', rows: [], excluded: [], headerFound: false, error: 'Šis failas atrodo tuščias.' };
     }
-    const headerIdx = findBoqHeaderRow(allRows);
-    const { rows, excluded } = rowsFromSheet(allRows);
     if (rows.length === 0) {
-      return { fileType: 'xlsx', rows: [], excluded, headerFound: headerIdx !== -1, error: 'Šiame faile nerasta BOQ pozicijų.' };
+      return { fileType: 'xlsx', rows: [], excluded, headerFound, error: 'Šiame faile nerasta BOQ pozicijų.' };
     }
-    return { fileType: 'xlsx', rows, excluded, headerFound: headerIdx !== -1 };
+    return { fileType: 'xlsx', rows, excluded, headerFound };
   } catch {
     return { fileType: 'xlsx', rows: [], excluded: [], headerFound: false, error: 'Nepavyko nuskaityti failo. Patikrink, ar tai tinkamas Excel failas.' };
   }
@@ -243,10 +258,12 @@ async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => v
 
     const legacyExcluded: ExcludedBoqLine[] = [];
     const legacyRows: Omit<BoqRow, 'packageId'>[] = [];
-    for (const line of pagesLines.flat()) {
+    for (const [pageIndex, pageLines] of pagesLines.entries()) {
+      for (const line of pageLines) {
       const candidate = parsePdfLineToCandidate(line);
       if (!candidate) continue;
-      const result = classifyBoqCandidate(candidate);
+      const sourceReference = `PDF, ${pageIndex + 1} psl.`;
+      const result = classifyBoqCandidate({ ...candidate, sourceReference });
       if ('accepted' in result) {
         legacyRows.push({
           id: uid(),
@@ -256,9 +273,11 @@ async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => v
           quantity: result.accepted.quantity,
           notes: null,
           rawSection: null,
+          sourceReference,
         });
       } else {
-        legacyExcluded.push(result.rejected);
+        legacyExcluded.push({ ...result.rejected, sourceReference });
+      }
       }
     }
     if (legacyRows.length > 0) {

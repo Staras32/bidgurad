@@ -5,13 +5,31 @@ import { parseEuNumber } from '@/lib/numberParser';
  * Matches "1", "01", "1.1", "01.02", "1.1.1", "1.2.15", and similar — deliberately permissive on depth
  * since real documents vary (flat "1", "2", "3"… lists exist alongside deeply nested ones).
  */
-export const POSITION_NUMBER = /^(\d{1,2}(?:\.\d{1,2}){0,4})\.?$/;
+export const POSITION_NUMBER = /^(\d{1,4}(?:\.\d{1,4}){0,5})\.?$/;
 
 /** Requires an actual dot (2+ levels) — used only to calibrate column X-anchors, where a bare single
  * digit is too easily confused with a quantity value. Row *acceptance* uses POSITION_NUMBER instead. */
-export const ANCHOR_POSITION_TOKEN = /^\d{1,2}\.\d{1,2}(?:\.\d{1,2}){0,3}\.?$/;
+export const ANCHOR_POSITION_TOKEN = /^\d{1,4}\.\d{1,4}(?:\.\d{1,4}){0,4}\.?$/;
 
-const BOILERPLATE_KEYWORDS = ['suderinta', 'tvirtinu', 'atsakingas atstovas', 'lokalinė sąmata', 'lokaline samata'];
+const BOILERPLATE_PATTERNS = [
+  /\bsuderinta\b/i,
+  /\btvirtinu\b/i,
+  /\batsaking(?:as|a)\s+atstov(?:as|ė)\b/i,
+  /\blokalin[ėe]\s+s[aą]mata\b/i,
+  /\bužsakov(?:as|o)\b/i,
+  /\brangov(?:as|o)\b/i,
+  /\bparaš(?:as|ai|yta)\b/i,
+  /\bvardas[,\s]+pavardė\b/i,
+  /\bpareigos\b/i,
+  /\bobjekto\s+pavadinimas\b/i,
+  /\bdokument(?:o|ą)\s+(?:parengė|sudarė|pavadinimas)\b/i,
+];
+
+const TOTAL_LINE = /^(?:iš\s+viso|viso|tarpin[ėe]\s+suma|bendra\s+suma|subtotal|total)\b/i;
+const LETTER = /[a-ząčęėįšųūž]/i;
+/** Construction BOQs contain many legitimate project-specific units. Validate their shape instead of
+ * maintaining a brittle whitelist that would silently discard units such as kg/m, 100 m or pora. */
+const UNIT_TOKEN = /^(?=.{1,16}$)(?=.*(?:[a-ząčęėįšųūž]|%))[a-ząčęėįšųūž0-9²³%./'’-]+$/i;
 
 const DATE_ONLY = /^\d{4}[-.]\d{1,2}[-.]\d{1,2}\.?$|^\d{1,2}[-./]\d{1,2}[-./]\d{2,4}\.?$/;
 const PAGE_OR_DOC_FURNITURE = /^(puslapis|page|lapas|lapų|psl\.?|laida)\s*[:.]?\s*\d*$/i;
@@ -22,6 +40,7 @@ export interface CandidateFields {
   unit: string;
   quantityRaw: string;
   reference?: string;
+  sourceReference?: string;
 }
 
 export interface AcceptedBoqLine {
@@ -30,6 +49,7 @@ export interface AcceptedBoqLine {
   unit: string;
   quantity: number;
   reference: string;
+  sourceReference: string;
 }
 
 export interface ExcludedLine {
@@ -55,10 +75,10 @@ export function classifyBoqCandidate(row: CandidateFields): { accepted: Accepted
     return { rejected: { raw: '(tuščia eilutė)', reason: 'Tuščia eilutė' } };
   }
 
-  const lowerName = name.toLowerCase();
-  if (BOILERPLATE_KEYWORDS.some((kw) => lowerName.includes(kw))) {
+  if (BOILERPLATE_PATTERNS.some((pattern) => pattern.test(name) || pattern.test(raw))) {
     return { rejected: { raw, reason: 'Dokumento antraštė / žymėjimas' } };
   }
+  if (TOTAL_LINE.test(name)) return { rejected: { raw, reason: 'Tarpinė arba bendra suma' } };
   if (DATE_ONLY.test(position) || DATE_ONLY.test(name)) {
     return { rejected: { raw, reason: 'Data' } };
   }
@@ -72,8 +92,18 @@ export function classifyBoqCandidate(row: CandidateFields): { accepted: Accepted
   if (!name) {
     return { rejected: { raw, reason: 'Trūksta aprašymo' } };
   }
+  if (name.length < 3 || !LETTER.test(name)) {
+    return { rejected: { raw, reason: 'Neatpažintas darbų aprašymas' } };
+  }
+  if (name.length > 500) {
+    return { rejected: { raw, reason: 'Aprašymas per ilgas – tikėtina sujungta dokumento ištrauka' } };
+  }
   if (!unit) {
     return { rejected: { raw, reason: 'Trūksta mato vieneto' } };
+  }
+  const normalizedUnit = unit.toLowerCase().replace(/\s+/g, '').replace(/\.$/, '');
+  if (!UNIT_TOKEN.test(normalizedUnit)) {
+    return { rejected: { raw, reason: `Neatpažintas mato vienetas: ${unit}` } };
   }
   const quantity = quantityRaw ? parseEuNumber(quantityRaw) : NaN;
   if (!Number.isFinite(quantity)) {
@@ -81,6 +111,6 @@ export function classifyBoqCandidate(row: CandidateFields): { accepted: Accepted
   }
 
   return {
-    accepted: { positionNumber: position, name, unit, quantity, reference: row.reference?.trim() ?? '' },
+    accepted: { positionNumber: position, name, unit, quantity, reference: row.reference?.trim() ?? '', sourceReference: row.sourceReference?.trim() ?? '' },
   };
 }

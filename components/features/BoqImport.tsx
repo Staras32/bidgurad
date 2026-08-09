@@ -279,10 +279,45 @@ export function BoqImport() {
 
           {status === 'review' && (
             <div className="animate-fade-in space-y-4">
-              <Alert variant="success" title={`Aptikta ${pendingRows.length.toLocaleString('lt-LT')} galimos BOQ pozicijos`}>
-                Kiekviena pozicija turi pozicijos numerį, aprašymą, mato vienetą ir kiekį. Prieš tęsiant peržiūrėk, kas
-                buvo neįtraukta.
+              <Alert variant="success" title={`Aptikta BOQ pozicijų: ${pendingRows.length.toLocaleString('lt-LT')}`}>
+                Importas dar nepatvirtintas. Peržiūrėk priimtas pozicijas ir atmestas dokumento eilutes — darbų paketai
+                bus formuojami tik po tavo patvirtinimo.
               </Alert>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Priimtos BOQ pozicijos</CardTitle>
+                  <CardDescription>
+                    Įtraukiamos tik eilutės, kuriose patikimai aptiktas pozicijos numeris, darbų pavadinimas, mato vienetas ir kiekis.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="!p-0">
+                  <div className="max-h-[28rem] overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow hover={false}>
+                          <TableHeadCell>Poz. Nr.</TableHeadCell>
+                          <TableHeadCell>Pavadinimas</TableHeadCell>
+                          <TableHeadCell>Vnt.</TableHeadCell>
+                          <TableHeadCell>Kiekis</TableHeadCell>
+                          <TableHeadCell>Šaltinis</TableHeadCell>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pendingRows.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell className="font-mono tabular-nums">{row.positionNumber}</TableCell>
+                            <TableCell className="min-w-[280px] font-medium text-gray-900">{row.name}</TableCell>
+                            <TableCell>{row.unit}</TableCell>
+                            <TableCell className="font-mono tabular-nums">{row.quantity?.toLocaleString('lt-LT')}</TableCell>
+                            <TableCell className="whitespace-nowrap text-xs text-gray-400">{row.sourceReference ?? '—'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
 
               {excludedLines.length > 0 && (
                 <Card>
@@ -297,7 +332,10 @@ export function BoqImport() {
                           <Badge variant="neutral" className="mt-0.5 shrink-0">
                             {line.reason}
                           </Badge>
-                          <span className="min-w-0 flex-1 truncate text-gray-600">{line.raw}</span>
+                          <span className="min-w-0 flex-1 text-gray-600">
+                            <span className="block break-words">{line.raw}</span>
+                            {line.sourceReference && <span className="mt-0.5 block text-[11px] text-gray-400">{line.sourceReference}</span>}
+                          </span>
                         </div>
                       ))}
                     </div>

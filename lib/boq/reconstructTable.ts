@@ -152,13 +152,14 @@ interface RawLine {
   position: string;
   name: string;
   cells: Record<ValueColumnKey, string>;
+  sourceReference: string;
 }
 
 function classifyLines(pagesTokens: PositionedToken[][], rowTolerance: number): RawLine[] {
   const lines: RawLine[] = [];
   let lastAnchors: ColumnAnchor[] = [];
 
-  for (const rawPageTokens of pagesTokens) {
+  for (const [pageIndex, rawPageTokens] of pagesTokens.entries()) {
     const pageTokens = cleanTokens(rawPageTokens);
     if (pageTokens.length === 0) continue;
 
@@ -181,7 +182,7 @@ function classifyLines(pagesTokens: PositionedToken[][], rowTolerance: number): 
       const positionToken = extractPositionToken(row);
       const remainingRow = positionToken ? row.filter((t) => t !== positionToken) : row;
       const cells = assignRowToColumns(remainingRow, activeAnchors);
-      lines.push({ position: positionToken ? positionToken.text.trim() : '', name: cells.name.trim(), cells });
+      lines.push({ position: positionToken ? positionToken.text.trim() : '', name: cells.name.trim(), cells, sourceReference: `PDF, ${pageIndex + 1} psl.` });
     }
   }
   return lines;
@@ -213,6 +214,7 @@ export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance =
     unit: string;
     quantityRaw: string;
     reference: string;
+    sourceReference: string;
   }
   let open: OpenCandidate | null = null;
 
@@ -224,6 +226,7 @@ export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance =
       unit: open.unit,
       quantityRaw: open.quantityRaw,
       reference: open.reference,
+      sourceReference: open.sourceReference,
     });
     if ('accepted' in result) {
       rows.push({
@@ -234,6 +237,7 @@ export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance =
         quantity: result.accepted.quantity,
         notes: result.accepted.reference ? `Nuoroda: ${result.accepted.reference}` : null,
         rawSection: null,
+        sourceReference: result.accepted.sourceReference,
       });
     } else {
       excluded.push(result.rejected);
@@ -244,7 +248,7 @@ export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance =
   for (const line of lines) {
     if (line.position) {
       finalize();
-      open = { position: line.position, nameParts: [line.name], unit: line.cells.unit, quantityRaw: line.cells.quantity, reference: line.cells.reference };
+      open = { position: line.position, nameParts: [line.name], unit: line.cells.unit, quantityRaw: line.cells.quantity, reference: line.cells.reference, sourceReference: line.sourceReference };
       continue;
     }
 
