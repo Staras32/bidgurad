@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
+  CircleAlert,
   Check,
   CheckCircle2,
   FileCheck2,
@@ -15,6 +16,8 @@ import {
   Save,
   ScanSearch,
   ShieldCheck,
+  Trash2,
+  Undo2,
 } from 'lucide-react';
 
 import {
@@ -69,6 +72,7 @@ export function BoqImport() {
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
 
   const [pendingRows, setPendingRows] = useState<Omit<BoqRow, 'packageId'>[]>([]);
+  const [removedRows, setRemovedRows] = useState<Omit<BoqRow, 'packageId'>[]>([]);
   const [excludedLines, setExcludedLines] = useState<ExcludedBoqLine[]>([]);
 
   const [packages, setPackages] = useState<WorkPackage[]>([]);
@@ -96,6 +100,7 @@ export function BoqImport() {
     setStatus('reading');
     setError(null);
     setOcrProgress(null);
+    setRemovedRows([]);
 
     const result = await parseBoqFile(file, (progress) => setOcrProgress(progress));
     setFileType(result.fileType);
@@ -114,6 +119,7 @@ export function BoqImport() {
   };
 
   const confirmImport = () => {
+    if (criticalIssueCount > 0) return;
     const built = buildWorkPackages(pendingRows, uid);
     setPackages(built.packages);
     setRows(built.rows);
@@ -130,6 +136,7 @@ export function BoqImport() {
     setOcrProgress(null);
     setPdfExtractionMethod(undefined);
     setPendingRows([]);
+    setRemovedRows([]);
     setExcludedLines([]);
     setPackages([]);
     setRows([]);
@@ -142,6 +149,48 @@ export function BoqImport() {
   const packageCount = (pkgId: string) => rows.filter((r) => r.packageId === pkgId).length;
   const visibleRows = selectedPackageId ? rows.filter((r) => r.packageId === selectedPackageId) : rows;
   const selectedPackage = packages.find((p) => p.id === selectedPackageId) ?? null;
+
+  const duplicatePositions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of pendingRows) {
+      const position = row.positionNumber?.trim();
+      if (position) counts.set(position, (counts.get(position) ?? 0) + 1);
+    }
+    return new Set([...counts].filter(([, count]) => count > 1).map(([position]) => position));
+  }, [pendingRows]);
+
+  const issuesForRow = (row: Omit<BoqRow, 'packageId'>): string[] => {
+    const issues: string[] = [];
+    if (!row.positionNumber?.trim()) issues.push('Trūksta pozicijos numerio');
+    if (row.positionNumber && duplicatePositions.has(row.positionNumber.trim())) issues.push('Pasikartojantis pozicijos numeris');
+    if (!row.name.trim()) issues.push('Trūksta pavadinimo');
+    if (!row.unit?.trim()) issues.push('Trūksta mato vieneto');
+    if (row.quantity === null || !Number.isFinite(row.quantity)) issues.push('Trūksta kiekio');
+    else if (row.quantity <= 0) issues.push('Kiekis turi būti didesnis už nulį');
+    return issues;
+  };
+
+  const criticalIssueCount = pendingRows.reduce((count, row) => count + (issuesForRow(row).length > 0 ? 1 : 0), 0);
+
+  const updatePendingRow = <K extends keyof Omit<BoqRow, 'packageId'>>(
+    id: string,
+    field: K,
+    value: Omit<BoqRow, 'packageId'>[K]
+  ) => setPendingRows((previous) => previous.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
+
+  const removePendingRow = (id: string) => {
+    const row = pendingRows.find((candidate) => candidate.id === id);
+    if (!row) return;
+    setPendingRows((previous) => previous.filter((candidate) => candidate.id !== id));
+    setRemovedRows((previous) => [...previous, row]);
+  };
+
+  const restoreLastRemovedRow = () => {
+    const row = removedRows[removedRows.length - 1];
+    if (!row) return;
+    setPendingRows((previous) => [...previous, row]);
+    setRemovedRows((previous) => previous.slice(0, -1));
+  };
 
   const startRename = (pkg: WorkPackage) => {
     setRenamingId(pkg.id);
@@ -344,12 +393,43 @@ export function BoqImport() {
                 bus formuojami tik po tavo patvirtinimo.
               </Alert>
 
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-success-200 bg-success-50 px-4 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-success-700">Paruošta</p>
+                  <p className="mt-1 text-xl font-semibold text-success-900">{(pendingRows.length - criticalIssueCount).toLocaleString('lt-LT')}</p>
+                  <p className="text-xs text-success-700">pozicijos be klaidų</p>
+                </div>
+                <div className={cn('rounded-lg border px-4 py-3', criticalIssueCount > 0 ? 'border-warning-200 bg-warning-50' : 'border-gray-200 bg-white')}>
+                  <p className={cn('text-[10px] font-semibold uppercase tracking-wide', criticalIssueCount > 0 ? 'text-warning-700' : 'text-gray-500')}>Reikia patikrinti</p>
+                  <p className={cn('mt-1 text-xl font-semibold', criticalIssueCount > 0 ? 'text-warning-900' : 'text-gray-900')}>{criticalIssueCount.toLocaleString('lt-LT')}</p>
+                  <p className={cn('text-xs', criticalIssueCount > 0 ? 'text-warning-700' : 'text-gray-500')}>kritinės eilutės</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Neįtraukta</p>
+                  <p className="mt-1 text-xl font-semibold text-gray-900">{(excludedLines.length + removedRows.length).toLocaleString('lt-LT')}</p>
+                  <p className="text-xs text-gray-500">dokumento eilutės</p>
+                </div>
+              </div>
+
+              {criticalIssueCount > 0 && (
+                <Alert variant="warning" title="Prieš tęsiant reikia pataisyti pažymėtas eilutes">
+                  Dublikuoti pozicijų numeriai, tušti laukai ir netinkami kiekiai pažymėti lentelėje. Paketai nebus kuriami, kol liks kritinių klaidų.
+                </Alert>
+              )}
+
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Priimtos BOQ pozicijos</CardTitle>
-                  <CardDescription>
-                    Įtraukiamos tik eilutės, kuriose patikimai aptiktas pozicijos numeris, darbų pavadinimas, mato vienetas ir kiekis.
-                  </CardDescription>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base">BOQ peržiūra ir taisymas</CardTitle>
+                      <CardDescription className="mt-1">Spustelėk lauką ir pataisyk parserio rezultatą. Pakeitimai bus naudojami darbų paketams.</CardDescription>
+                    </div>
+                    {removedRows.length > 0 && (
+                      <Button variant="secondary" size="sm" onClick={restoreLastRemovedRow}>
+                        <Undo2 size={14} /> Atkurti paskutinę pašalintą
+                      </Button>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent className="!p-0">
                   <div className="max-h-[28rem] overflow-auto">
@@ -361,18 +441,71 @@ export function BoqImport() {
                           <TableHeadCell>Vnt.</TableHeadCell>
                           <TableHeadCell>Kiekis</TableHeadCell>
                           <TableHeadCell>Šaltinis</TableHeadCell>
+                          <TableHeadCell>Būsena</TableHeadCell>
+                          <TableHeadCell className="w-10" />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {pendingRows.map((row) => (
-                          <TableRow key={row.id}>
-                            <TableCell className="font-mono tabular-nums">{row.positionNumber}</TableCell>
-                            <TableCell className="min-w-[280px] font-medium text-gray-900">{row.name}</TableCell>
-                            <TableCell>{row.unit}</TableCell>
-                            <TableCell className="font-mono tabular-nums">{row.quantity?.toLocaleString('lt-LT')}</TableCell>
-                            <TableCell className="whitespace-nowrap text-xs text-gray-400">{row.sourceReference ?? '—'}</TableCell>
-                          </TableRow>
-                        ))}
+                        {pendingRows.map((row) => {
+                          const rowIssues = issuesForRow(row);
+                          const hasIssues = rowIssues.length > 0;
+                          return (
+                            <TableRow key={row.id} className={cn(hasIssues && 'bg-warning-50/60')}>
+                              <TableCell className="min-w-[110px]">
+                                <Input
+                                  value={row.positionNumber ?? ''}
+                                  onChange={(event) => updatePendingRow(row.id, 'positionNumber', event.target.value || null)}
+                                  aria-label={`Pozicijos numeris: ${row.name}`}
+                                  className={cn('h-8 font-mono text-xs tabular-nums', hasIssues && (!row.positionNumber?.trim() || duplicatePositions.has(row.positionNumber.trim())) && 'border-warning-400')}
+                                />
+                              </TableCell>
+                              <TableCell className="min-w-[300px]">
+                                <Input
+                                  value={row.name}
+                                  onChange={(event) => updatePendingRow(row.id, 'name', event.target.value)}
+                                  aria-label={`Pozicijos ${row.positionNumber ?? ''} pavadinimas`}
+                                  className={cn('h-8 text-xs font-medium', !row.name.trim() && 'border-warning-400')}
+                                />
+                              </TableCell>
+                              <TableCell className="min-w-[90px]">
+                                <Input
+                                  value={row.unit ?? ''}
+                                  onChange={(event) => updatePendingRow(row.id, 'unit', event.target.value || null)}
+                                  aria-label={`Pozicijos ${row.positionNumber ?? ''} mato vienetas`}
+                                  className={cn('h-8 text-xs', !row.unit?.trim() && 'border-warning-400')}
+                                />
+                              </TableCell>
+                              <TableCell className="min-w-[110px]">
+                                <Input
+                                  type="number"
+                                  step="any"
+                                  value={row.quantity ?? ''}
+                                  onChange={(event) => updatePendingRow(row.id, 'quantity', event.target.value === '' ? null : Number(event.target.value))}
+                                  aria-label={`Pozicijos ${row.positionNumber ?? ''} kiekis`}
+                                  className={cn('h-8 font-mono text-xs tabular-nums', (row.quantity === null || row.quantity <= 0) && 'border-warning-400')}
+                                />
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-xs text-gray-400">{row.sourceReference ?? '—'}</TableCell>
+                              <TableCell className="min-w-[170px]">
+                                {hasIssues ? (
+                                  <div className="flex items-start gap-1.5 text-[11px] leading-4 text-warning-700"><CircleAlert size={13} className="mt-0.5 shrink-0" /><span>{rowIssues.join(' · ')}</span></div>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-success-700"><CheckCircle2 size={13} /> Paruošta</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <button
+                                  type="button"
+                                  onClick={() => removePendingRow(row.id)}
+                                  aria-label={`Pašalinti poziciją ${row.positionNumber ?? row.name}`}
+                                  className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-danger-50 hover:text-danger-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-400"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -404,9 +537,9 @@ export function BoqImport() {
               )}
 
               <div className="flex flex-wrap items-center gap-3">
-                <Button variant="primary" size="lg" onClick={confirmImport} disabled={pendingRows.length === 0}>
+                <Button variant="primary" size="lg" onClick={confirmImport} disabled={pendingRows.length === 0 || criticalIssueCount > 0}>
                   <CheckCircle2 size={18} aria-hidden />
-                  Patvirtinti importą
+                  {criticalIssueCount > 0 ? `Pataisyk eilutes (${criticalIssueCount})` : 'Patvirtinti importą'}
                 </Button>
                 <Button variant="secondary" size="lg" onClick={startOver}>
                   Importuoti kitą failą
