@@ -48,6 +48,14 @@ import { storage } from '@/lib/storage';
 import { parseBoqFile, type OcrProgress } from '@/lib/boq/parseBoq';
 import { buildWorkPackages, OTHER_PACKAGE_NAME } from '@/lib/boq/classify';
 import type { BoqFileType, BoqRow, ExcludedBoqLine, WorkPackage } from '@/lib/boq/types';
+import {
+  isPackageNameAvailable,
+  makeUniquePackageName,
+  mergeWorkPackages,
+  moveRowsToPackage,
+  removeEmptyPackage,
+  splitRowsIntoPackage,
+} from '@/lib/boq/workPackageOperations';
 
 type ImportStatus = 'idle' | 'reading' | 'review' | 'ready' | 'error';
 
@@ -77,6 +85,8 @@ export function BoqImport() {
 
   const [packages, setPackages] = useState<WorkPackage[]>([]);
   const [rows, setRows] = useState<BoqRow[]>([]);
+  const [packageHistory, setPackageHistory] = useState<{ packages: WorkPackage[]; rows: BoqRow[]; label: string }[]>([]);
+  const [packageNameError, setPackageNameError] = useState('');
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -126,6 +136,8 @@ export function BoqImport() {
     setUsedFileSections(built.usedFileSections);
     setSelectedPackageId(built.packages[0]?.id ?? null);
     setSelectedRowIds(new Set());
+    setPackageHistory([]);
+    setPackageNameError('');
     setStatus('ready');
   };
 
@@ -140,6 +152,8 @@ export function BoqImport() {
     setExcludedLines([]);
     setPackages([]);
     setRows([]);
+    setPackageHistory([]);
+    setPackageNameError('');
     setSelectedPackageId(null);
     setMergeMode(false);
     setMergeSelection(new Set());
@@ -149,6 +163,22 @@ export function BoqImport() {
   const packageCount = (pkgId: string) => rows.filter((r) => r.packageId === pkgId).length;
   const visibleRows = selectedPackageId ? rows.filter((r) => r.packageId === selectedPackageId) : rows;
   const selectedPackage = packages.find((p) => p.id === selectedPackageId) ?? null;
+
+  const recordPackageChange = (label: string) => {
+    setPackageHistory((previous) => [...previous.slice(-9), { packages, rows, label }]);
+  };
+
+  const undoPackageChange = () => {
+    const snapshot = packageHistory[packageHistory.length - 1];
+    if (!snapshot) return;
+    setPackages(snapshot.packages);
+    setRows(snapshot.rows);
+    setPackageHistory((previous) => previous.slice(0, -1));
+    setSelectedPackageId(snapshot.packages.some((pkg) => pkg.id === selectedPackageId) ? selectedPackageId : snapshot.packages[0]?.id ?? null);
+    setSelectedRowIds(new Set());
+    setMergeMode(false);
+    setMergeSelection(new Set());
+  };
 
   const duplicatePositions = useMemo(() => {
     const counts = new Map<string, number>();
@@ -195,26 +225,35 @@ export function BoqImport() {
   const startRename = (pkg: WorkPackage) => {
     setRenamingId(pkg.id);
     setRenameValue(pkg.name);
+    setPackageNameError('');
   };
   const commitRename = () => {
     if (!renamingId) return;
     const trimmed = renameValue.trim();
+    if (!isPackageNameAvailable(packages, trimmed, renamingId)) {
+      setPackageNameError(trimmed ? 'Paketas tokiu pavadinimu jau yra.' : 'Įvesk paketo pavadinimą.');
+      return;
+    }
     if (trimmed) {
+      recordPackageChange('Paketo pervadinimas');
       setPackages((prev) => prev.map((p) => (p.id === renamingId ? { ...p, name: trimmed, source: 'custom' } : p)));
     }
+    setPackageNameError('');
     setRenamingId(null);
   };
 
   const createPackage = (name: string) => {
     const trimmed = name.trim();
-    if (!trimmed) {
-      setNewPackageDraft(null);
+    if (!isPackageNameAvailable(packages, trimmed)) {
+      setPackageNameError(trimmed ? 'Paketas tokiu pavadinimu jau yra.' : 'Įvesk paketo pavadinimą.');
       return;
     }
     const newPkg: WorkPackage = { id: uid(), name: trimmed, source: 'custom' };
+    recordPackageChange('Naujas paketas');
     setPackages((prev) => [...prev, newPkg]);
     setSelectedPackageId(newPkg.id);
     setNewPackageDraft(null);
+    setPackageNameError('');
   };
 
   const toggleMergeSelect = (id: string) =>
@@ -226,11 +265,12 @@ export function BoqImport() {
     });
 
   const commitMerge = () => {
-    const ids = [...mergeSelection];
-    if (ids.length < 2) return;
-    const [targetId, ...rest] = ids;
-    setRows((prev) => prev.map((r) => (rest.includes(r.packageId) ? { ...r, packageId: targetId } : r)));
-    setPackages((prev) => prev.filter((p) => !rest.includes(p.id)));
+    if (mergeSelection.size < 2) return;
+    recordPackageChange('Paketų sujungimas');
+    const result = mergeWorkPackages(packages, rows, mergeSelection);
+    const targetId = result.packages.find((pkg) => mergeSelection.has(pkg.id))?.id ?? result.packages[0]?.id ?? null;
+    setRows(result.rows);
+    setPackages(result.packages);
     setSelectedPackageId(targetId);
     setMergeSelection(new Set());
     setMergeMode(false);
@@ -244,16 +284,54 @@ export function BoqImport() {
       return next;
     });
 
-  const moveRowToPackage = (rowId: string, packageId: string) =>
-    setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, packageId } : r)));
+  const moveRowToPackage = (rowId: string, packageId: string) => {
+    if (rows.find((row) => row.id === rowId)?.packageId === packageId) return;
+    recordPackageChange('Pozicijos perkėlimas');
+    setRows((previous) => moveRowsToPackage(previous, [rowId], packageId));
+    setSelectedRowIds((previous) => {
+      const next = new Set(previous);
+      next.delete(rowId);
+      return next;
+    });
+  };
+
+  const toggleAllVisibleRows = () => {
+    const allSelected = visibleRows.length > 0 && visibleRows.every((row) => selectedRowIds.has(row.id));
+    setSelectedRowIds((previous) => {
+      const next = new Set(previous);
+      for (const row of visibleRows) {
+        if (allSelected) next.delete(row.id);
+        else next.add(row.id);
+      }
+      return next;
+    });
+  };
+
+  const moveSelectedRowsToPackage = (packageId: string) => {
+    if (selectedRowIds.size === 0 || !packageId) return;
+    recordPackageChange('Kelių pozicijų perkėlimas');
+    setRows((previous) => moveRowsToPackage(previous, selectedRowIds, packageId));
+    setSelectedRowIds(new Set());
+    setSelectedPackageId(packageId);
+  };
 
   const splitSelectedRows = () => {
     if (!selectedPackage || selectedRowIds.size === 0) return;
-    const newPkg: WorkPackage = { id: uid(), name: `${selectedPackage.name} (dalis)`, source: 'custom' };
-    setPackages((prev) => [...prev, newPkg]);
-    setRows((prev) => prev.map((r) => (selectedRowIds.has(r.id) ? { ...r, packageId: newPkg.id } : r)));
+    const newPkg: WorkPackage = { id: uid(), name: makeUniquePackageName(packages, `${selectedPackage.name} (dalis)`), source: 'custom' };
+    recordPackageChange('Paketo padalijimas');
+    const result = splitRowsIntoPackage(packages, rows, selectedRowIds, newPkg);
+    setPackages(result.packages);
+    setRows(result.rows);
     setSelectedRowIds(new Set());
     setSelectedPackageId(newPkg.id);
+  };
+
+  const deleteEmptyPackage = (packageId: string) => {
+    const nextPackages = removeEmptyPackage(packages, rows, packageId);
+    if (nextPackages === packages) return;
+    recordPackageChange('Tuščio paketo pašalinimas');
+    setPackages(nextPackages);
+    setSelectedPackageId(nextPackages[0]?.id ?? null);
   };
 
   const saveWorkPackages = () => {
@@ -602,15 +680,29 @@ export function BoqImport() {
                 {/* Left: Work Packages */}
                 <Card className="h-fit">
                   <CardHeader>
-                    <CardTitle className="text-base">Darbų paketai</CardTitle>
-                    <CardDescription>{packages.length} paketai</CardDescription>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-base">Darbų paketai</CardTitle>
+                        <CardDescription>{packages.length} paketai · pasirink paketą ir tvarkyk jo pozicijas</CardDescription>
+                      </div>
+                      {packageHistory.length > 0 && (
+                        <Button variant="ghost" size="sm" onClick={undoPackageChange} title={packageHistory.at(-1)?.label}>
+                          <Undo2 size={14} /> Atšaukti
+                        </Button>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent className="!p-0">
                     <div className="divide-y divide-gray-100">
                       {packages.map((pkg) => (
                         <div
                           key={pkg.id}
-                          onClick={() => !mergeMode && renamingId !== pkg.id && setSelectedPackageId(pkg.id)}
+                          onClick={() => {
+                            if (!mergeMode && renamingId !== pkg.id) {
+                              setSelectedPackageId(pkg.id);
+                              setSelectedRowIds(new Set());
+                            }
+                          }}
                           onDragOver={(e) => {
                             e.preventDefault();
                             setDragOverPackageId(pkg.id);
@@ -657,17 +749,32 @@ export function BoqImport() {
                               <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{pkg.name}</span>
                               <span className="shrink-0 text-xs text-gray-400">({packageCount(pkg.id)})</span>
                               {!mergeMode && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    startRename(pkg);
-                                  }}
-                                  aria-label={`Pervadinti ${pkg.name}`}
-                                  className="shrink-0 rounded p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-600"
-                                >
-                                  <Pencil size={12} />
-                                </button>
+                                <div className="flex shrink-0 items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      startRename(pkg);
+                                    }}
+                                    aria-label={`Pervadinti ${pkg.name}`}
+                                    className="rounded p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-600"
+                                  >
+                                    <Pencil size={12} />
+                                  </button>
+                                  {packageCount(pkg.id) === 0 && packages.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteEmptyPackage(pkg.id);
+                                      }}
+                                      aria-label={`Pašalinti tuščią paketą ${pkg.name}`}
+                                      className="rounded p-1 text-gray-300 hover:bg-danger-50 hover:text-danger-600"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
                               )}
                             </>
                           )}
@@ -702,6 +809,7 @@ export function BoqImport() {
                           Naujas paketas
                         </button>
                       )}
+                      {packageNameError && <p className="mt-2 text-xs text-danger-600">{packageNameError}</p>}
                     </div>
                   </CardContent>
                 </Card>
@@ -715,9 +823,22 @@ export function BoqImport() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       {selectedRowIds.size > 0 && (
-                        <Button variant="secondary" size="sm" onClick={splitSelectedRows}>
-                          Padalinti pasirinktas ({selectedRowIds.size})
-                        </Button>
+                        <>
+                          <select
+                            className={selectClass}
+                            value=""
+                            onChange={(event) => moveSelectedRowsToPackage(event.target.value)}
+                            aria-label={`Perkelti pasirinktas ${selectedRowIds.size} pozicijas`}
+                          >
+                            <option value="" disabled>Perkelti pasirinktas ({selectedRowIds.size})…</option>
+                            {packages.filter((pkg) => pkg.id !== selectedPackageId).map((pkg) => (
+                              <option key={pkg.id} value={pkg.id}>{pkg.name}</option>
+                            ))}
+                          </select>
+                          <Button variant="secondary" size="sm" onClick={splitSelectedRows}>
+                            Naujas paketas iš pasirinktų ({selectedRowIds.size})
+                          </Button>
+                        </>
                       )}
                       {!mergeMode ? (
                         <Button variant="secondary" size="sm" onClick={() => setMergeMode(true)}>
@@ -755,7 +876,14 @@ export function BoqImport() {
                         <TableHeader>
                           <TableRow hover={false}>
                             <TableHeadCell className="w-8" />
-                            <TableHeadCell className="w-8" />
+                            <TableHeadCell className="w-8">
+                              <input
+                                type="checkbox"
+                                checked={visibleRows.length > 0 && visibleRows.every((row) => selectedRowIds.has(row.id))}
+                                onChange={toggleAllVisibleRows}
+                                aria-label="Pasirinkti visas matomas pozicijas"
+                              />
+                            </TableHeadCell>
                             <TableHeadCell>Poz. Nr.</TableHeadCell>
                             <TableHeadCell>Pavadinimas</TableHeadCell>
                             <TableHeadCell>Vnt.</TableHeadCell>

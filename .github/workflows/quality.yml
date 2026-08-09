@@ -21,3 +21,5 @@ jobs:
         run: npx --yes tsx scripts/verify-boq-rules.ts
       - name: Verify OCR table reconstruction
         run: npx --yes tsx scripts/verify-ocr-fixture.ts
+      - name: Verify work package operations
+        run: npx --yes tsx scripts/verify-work-packages.ts
