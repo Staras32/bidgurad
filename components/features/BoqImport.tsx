@@ -6,12 +6,15 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  FileCheck2,
+  FileSpreadsheet,
   GripVertical,
-  ListChecks,
+  Layers3,
   Pencil,
   Plus,
   Save,
-  X,
+  ScanSearch,
+  ShieldCheck,
 } from 'lucide-react';
 
 import {
@@ -27,6 +30,7 @@ import {
   FileUpload,
   Input,
   Skeleton,
+  Stepper,
   Table,
   TableBody,
   TableCell,
@@ -218,45 +222,101 @@ export function BoqImport() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <header className="border-b border-gray-100 bg-white">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <ListChecks className="text-primary-600" size={18} aria-hidden />
-            BidGuard
-          </div>
-          <Link
-            href="/"
-            aria-label="Uždaryti"
-            className="rounded-md p-1.5 text-gray-400 transition-colors duration-150 ease-out hover:bg-gray-100 hover:text-gray-700"
-          >
-            <X size={18} />
+    <div className="flex min-h-screen flex-col bg-gray-50">
+      <header className="border-b border-gray-200/80 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
+          <Link href="/" className="flex items-center gap-2.5 text-gray-900 no-underline">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white shadow-sm">
+              <ShieldCheck size={18} aria-hidden />
+            </span>
+            <span className="text-base font-semibold tracking-tight">BidGuard</span>
+            <span className="hidden rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-500 sm:inline">
+              BOQ workflow
+            </span>
           </Link>
+          <div className="flex items-center gap-4">
+            <span className="hidden text-xs text-gray-400 md:inline">BOQ yra pagrindinis tiesos šaltinis</span>
+            <Link href="/supplier-quotes" className="text-xs font-medium text-gray-500 transition-colors hover:text-primary-600">
+              Pasiūlymų analizė
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="flex-1">
-        <div className="mx-auto max-w-6xl px-6 py-10">
-          <div className="mb-6">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-primary-600">Importuoti projekto BOQ</p>
-            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Darbų žiniaraščio importas</h1>
-            <Text muted className="mt-2 max-w-2xl">
-              Įkelk užsakovo darbų žiniaraštį (Excel arba PDF). Sistema automatiškai aptiks pozicijas ir sugrupuos jas į
-              darbų paketus, kuriuos gali pervadinti, sujungti, padalinti ar sutvarkyti rankiniu būdu.
-            </Text>
-          </div>
+        <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8 sm:py-10">
+          {status !== 'idle' && (
+            <div className="mb-7 grid gap-6 border-b border-gray-200 pb-7 lg:grid-cols-[1fr_420px] lg:items-end">
+              <div>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-600">Projekto BOQ paruošimas</p>
+                <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Darbų žiniaraščio importas</h1>
+                <Text muted className="mt-2 max-w-2xl">Patikrink importuotas pozicijas prieš kurdamas darbų paketus.</Text>
+              </div>
+              <Stepper
+                steps={[{ label: 'Įkelti BOQ' }, { label: 'Patikrinti pozicijas' }, { label: 'Darbų paketai' }]}
+                currentStep={status === 'review' ? 2 : status === 'ready' ? 3 : 1}
+              />
+            </div>
+          )}
 
           {status === 'idle' && (
-            <Card className="animate-fade-in">
-              <CardContent>
-                <FileUpload
-                  accept=".xlsx,.xls,.pdf"
-                  label="Vilkite BOQ failą čia arba spauskite, kad pasirinktumėte"
-                  hint="Palaikomi formatai: Excel ir PDF"
-                  onFilesSelected={handleFile}
+            <div className="animate-fade-in">
+              <div className="grid items-center gap-10 py-4 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16 lg:py-10">
+                <section>
+                  <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3 py-1.5 text-[11px] font-semibold text-primary-700">
+                    <FileCheck2 size={13} aria-hidden /> Patikimas BOQ importas
+                  </div>
+                  <h1 className="max-w-xl text-4xl font-semibold leading-[1.12] tracking-[-0.035em] text-gray-900 sm:text-5xl">
+                    Nuo dokumento iki aiškių darbų paketų.
+                  </h1>
+                  <p className="mt-5 max-w-xl text-base leading-7 text-gray-500">
+                    Įkelk užsakovo darbų žiniaraštį. BidGuard ištrauks tikras pozicijas, atskirs dokumento šiukšles ir
+                    leis tau patvirtinti rezultatą prieš formuojant užklausas rangovams.
+                  </p>
+                  <div className="mt-8 space-y-4">
+                    {[
+                      { icon: ScanSearch, title: 'Deterministic patikra', text: 'Pozicijos numeris, pavadinimas, vienetas ir kiekis tikrinami aiškiomis taisyklėmis.' },
+                      { icon: FileSpreadsheet, title: 'Excel, PDF ir OCR', text: 'Skirtingi šaltiniai paverčiami į vienodą vidinį BOQ modelį.' },
+                      { icon: Layers3, title: 'Kontrolė lieka tau', text: 'Prieš tęsiant matai priimtas bei atmestas eilutes ir pats tvarkai paketus.' },
+                    ].map(({ icon: Icon, title, text }) => (
+                      <div key={title} className="flex gap-3.5">
+                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-primary-600 shadow-sm ring-1 ring-gray-200"><Icon size={16} aria-hidden /></span>
+                        <div><h2 className="text-sm font-semibold text-gray-900">{title}</h2><p className="mt-0.5 text-xs leading-5 text-gray-500">{text}</p></div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg shadow-gray-900/[0.06]">
+                  <div className="border-b border-gray-100 bg-gradient-to-r from-primary-50 to-white px-6 py-5 sm:px-8">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-600">1 žingsnis iš 3</p>
+                    <h2 className="mt-1 text-lg font-semibold text-gray-900">Įkelk užsakovo BOQ</h2>
+                    <p className="mt-1 text-xs text-gray-500">Originalus dokumentas nebus keičiamas.</p>
+                  </div>
+                  <div className="p-5 sm:p-8">
+                    <FileUpload
+                      accept=".xlsx,.xls,.pdf"
+                      label="Vilkite BOQ failą čia"
+                      hint="arba spauskite ir pasirinkite iš kompiuterio"
+                      onFilesSelected={handleFile}
+                      className="min-h-[230px] rounded-xl bg-gray-50/70 px-8 py-12 hover:bg-primary-50/50"
+                    />
+                    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-[11px] text-gray-400">
+                      <span>Excel · PDF su tekstu · skenuotas PDF</span>
+                      <span className="flex items-center gap-1.5 text-success-700"><ShieldCheck size={13} /> Duomenys lieka tavo darbo sesijoje</span>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div className="mt-8 rounded-xl border border-gray-200 bg-white px-5 py-4 sm:px-7">
+                <Stepper
+                  steps={[{ label: 'Įkelti BOQ' }, { label: 'Patikrinti pozicijas' }, { label: 'Darbų paketai' }]}
+                  currentStep={1}
+                  className="mx-auto max-w-2xl"
                 />
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           )}
 
           {status === 'reading' && (
