@@ -8,11 +8,11 @@ import { ocrPdfPages, type OcrProgress } from './ocrPdf';
 type Row = (string | number | undefined)[];
 
 const FIELD_KEYWORDS = {
-  position: ['eil. nr', 'eil.nr', 'eil nr', 'poz. nr', 'pozicijos nr', 'nr.', 'poz.', 'pozicija'],
-  name: ['darbų pavadinimas', 'darbu pavadinimas', 'pozicijos pavadinimas', 'pavadinimas', 'aprašymas', 'aprasymas', 'darbai'],
-  unit: ['mato vnt', 'matavimo vienetas', 'mato vienetas', 'vnt.', 'vnt'],
+  position: ['eil. nr', 'eil.nr', 'eil nr', 'poz. nr', 'pozicijos nr', 'nr.', 'poz.', 'pozicija', 'sąm. eil', 'sam. eil'],
+  name: ['darbų pavadinimas', 'darbu pavadinimas', 'pozicijos pavadinimas', 'pavadinimas', 'aprašymas', 'aprasymas', 'aprašymai', 'aprasymai', 'darbų ir išlaidų', 'darbu ir islaidu', 'darbai'],
+  unit: ['mato vnt', 'matavimo vienetas', 'mato vienetas', 'mato', 'vnt.', 'vnt'],
   quantity: ['kiekis'],
-  notes: ['pastabos', 'pastaba', 'komentaras'],
+  notes: ['pastabos', 'pastaba', 'komentaras', 'darbo kodas', 'kodas'],
   section: ['skyrius', 'skirsnis', 'kategorija', 'dalis'],
 } as const;
 
@@ -31,18 +31,34 @@ function countFieldHits(row: Row): number {
   return hits;
 }
 
-/** Header row = first of the first 15 rows with at least 2 recognizable BOQ field keywords. */
-function findBoqHeaderRow(allRows: Row[]): number {
-  let bestIdx = -1;
-  let bestScore = 1;
-  for (let i = 0; i < Math.min(15, allRows.length); i++) {
-    const score = countFieldHits(allRows[i]);
-    if (score > bestScore) {
-      bestScore = score;
-      bestIdx = i;
+interface HeaderMatch {
+  index: number;
+  height: number;
+  row: Row;
+}
+
+function mergeHeaderRows(rows: Row[]): Row {
+  const width = Math.max(0, ...rows.map((row) => row.length));
+  return Array.from({ length: width }, (_, column) => rows.map((row) => cellText(row, column)).filter(Boolean).join(' '));
+}
+
+/** Lithuanian estimates commonly place the table after title blocks and split headings across 2 rows. */
+function findBoqHeader(allRows: Row[]): HeaderMatch | null {
+  let best: (HeaderMatch & { score: number }) | null = null;
+  for (let index = 0; index < Math.min(50, allRows.length); index++) {
+    for (let height = 1; height <= 3 && index + height <= allRows.length; height++) {
+      const row = mergeHeaderRows(allRows.slice(index, index + height));
+      const score = countFieldHits(row);
+      if (score >= 3 && (!best || score > best.score || (score === best.score && height < best.height))) {
+        best = { index, height, row, score };
+      }
     }
   }
-  return bestIdx;
+  return best ? { index: best.index, height: best.height, row: best.row } : null;
+}
+
+function findBoqHeaderRow(allRows: Row[]): number {
+  return findBoqHeader(allRows)?.index ?? -1;
 }
 
 function guessColumn(headerRow: Row, keywords: readonly string[]): number {
@@ -71,8 +87,9 @@ interface SheetExtraction {
  * Everything else — section headers, boilerplate, incomplete rows — is reported as excluded, not guessed at.
  */
 function rowsFromSheet(allRows: Row[], sheetName: string): SheetExtraction {
-  const headerIdx = findBoqHeaderRow(allRows);
-  const headerFound = headerIdx !== -1;
+  const header = findBoqHeader(allRows);
+  const headerIdx = header?.index ?? -1;
+  const headerFound = header !== null;
   const rows: Omit<BoqRow, 'packageId'>[] = [];
   const excluded: ExcludedBoqLine[] = [];
 
@@ -95,7 +112,7 @@ function rowsFromSheet(allRows: Row[], sheetName: string): SheetExtraction {
   };
 
   if (headerFound) {
-    const headerRow = allRows[headerIdx];
+    const headerRow = header.row;
     const cols = {
       position: guessColumn(headerRow, FIELD_KEYWORDS.position),
       name: guessColumn(headerRow, FIELD_KEYWORDS.name),
@@ -107,7 +124,7 @@ function rowsFromSheet(allRows: Row[], sheetName: string): SheetExtraction {
 
     const dataRows = allRows
       .map((row, index) => ({ row, index }))
-      .slice(headerIdx + 1)
+      .slice(headerIdx + header.height)
       .filter(({ row }) => row.some((c) => c !== undefined && String(c).trim() !== ''));
 
     if (cols.name === -1) {
@@ -119,9 +136,26 @@ function rowsFromSheet(allRows: Row[], sheetName: string): SheetExtraction {
       return { rows, excluded };
     }
 
+    let currentSection: string | null = null;
+    let currentSectionNumber: string | null = null;
+
     for (const { row: r, index } of dataRows) {
       const qtyRaw = cols.quantity >= 0 ? cellText(r, cols.quantity) ?? '' : '';
-      classify(cellText(r, cols.position) ?? '', cellText(r, cols.name) ?? '', cellText(r, cols.unit) ?? '', qtyRaw, cellText(r, cols.notes), cellText(r, cols.section), `${sheetName}, ${index + 1} eil.`);
+      const position = cellText(r, cols.position) ?? '';
+      const name = cellText(r, cols.name) ?? '';
+      const unit = cellText(r, cols.unit) ?? '';
+      const notes = cellText(r, cols.notes);
+      const explicitSection = cellText(r, cols.section);
+
+      // Common estimate section: empty position, numeric code in "Darbo kodas", title in description.
+      if (!position && name && !unit && !qtyRaw && notes && /^\d+(?:\.\d+)*$/.test(notes.trim())) {
+        currentSectionNumber = notes.trim();
+        currentSection = name;
+        continue;
+      }
+
+      const hierarchicalPosition = position && currentSectionNumber ? `${currentSectionNumber}.${position}` : position;
+      classify(hierarchicalPosition, name, unit, qtyRaw, notes, explicitSection ?? currentSection, `${sheetName}, ${index + 1} eil.`);
     }
     return { rows, excluded };
   }
@@ -150,7 +184,7 @@ async function parseXlsx(file: File): Promise<BoqParseResult> {
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
       if (!sheet) continue;
-      const allRows = XLSX.utils.sheet_to_json<Row>(sheet, { header: 1, blankrows: false });
+      const allRows = XLSX.utils.sheet_to_json<Row>(sheet, { header: 1, blankrows: true });
       if (allRows.length === 0) continue;
       readableSheetFound = true;
       if (findBoqHeaderRow(allRows) !== -1) headerFound = true;

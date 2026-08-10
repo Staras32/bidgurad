@@ -17,7 +17,7 @@ const BOILERPLATE_PATTERNS = [
   /\batsaking(?:as|a)\s+atstov(?:as|ė)\b/i,
   /\blokalin[ėe]\s+s[aą]mata\b/i,
   /\bužsakov(?:as|o)\b/i,
-  /\brangov(?:as|o)\b/i,
+  /^rangov(?:as|o)\s*:/i,
   /\bparaš(?:as|ai|yta)\b/i,
   /\bvardas[,\s]+pavardė\b/i,
   /\bpareigos\b/i,
