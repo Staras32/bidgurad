@@ -1,22 +1,19 @@
 'use client';
 
 import { createBrowserClient } from '@supabase/ssr';
+import { getSupabasePublicConfig, isSupabaseConfigured } from './config';
 
 let browserClient: ReturnType<typeof createBrowserClient> | null = null;
 
-export function isSupabaseConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-}
-
 export function getSupabaseBrowserClient() {
-  if (!isSupabaseConfigured()) return null;
+  const config = getSupabasePublicConfig();
+  if (!config) return null;
 
   if (!browserClient) {
-    browserClient = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
+    browserClient = createBrowserClient(config.url, config.key);
   }
 
   return browserClient;
 }
+
+export { isSupabaseConfigured };
