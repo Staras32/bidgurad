@@ -14,11 +14,30 @@ export interface PositionedToken {
 const REFERENCE_TOKEN = /^ts-?\d{2,3}$/i;
 /** Pure numeric cell content (quantities), including EU decimal/composite forms like "637,0" or "1/0,3/0,2". */
 const NUMERIC_CELL = /^[\d.,/]+$/;
+/** Common construction units, including the predictable OCR substitution of a superscript ²/³ with "?". */
+const LIKELY_UNIT_CELL = /^(?:vnt|km|kg|ha|kompl|kompl\.|val|pora|t|m|m[²³23?]|m[²³23?]?\/?t|m\/?t|vnt\.?(?:\/m[²³23?]?\/t)?)\.?$/i;
+const OCR_UNIT_IN_TEXT = /^(?:vnt\.?\S*|km\.?|kg|ha|kompl\.?|val|pora|t|m\S{0,9})$/i;
+const OCR_QUANTITY_IN_TEXT = /^\d[\d.,/]*$/;
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/** Returns the left edge of the most frequently occupied X band (a table column), ignoring isolated
+ * numbers or short words that happen to occur at the end of a long description. */
+function dominantColumnStart(values: number[], tolerance = 70): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const clusters: number[][] = [];
+  for (const value of sorted) {
+    const cluster = clusters.at(-1);
+    if (cluster && value - cluster.at(-1)! <= tolerance) cluster.push(value);
+    else clusters.push([value]);
+  }
+  clusters.sort((a, b) => b.length - a.length || median(b) - median(a));
+  return Math.min(...clusters[0]) - 8;
 }
 
 /**
@@ -104,15 +123,17 @@ function detectColumnAnchors(tokens: PositionedToken[]): ColumnAnchor[] {
     const text = t.text.trim();
     if (!text || t.x <= nameX || t.x >= referenceX - 20 || t.x < referenceX - valueZoneMargin) continue;
     if (NUMERIC_CELL.test(text)) quantityXs.push(t.x);
-    else if (/[a-ząčęėįšųūž]/i.test(text)) unitXs.push(t.x);
+    else if (LIKELY_UNIT_CELL.test(text.replace(/\s+/g, ''))) unitXs.push(t.x);
   }
 
   const anchors: ColumnAnchor[] = [
     { key: 'name', x: nameX },
     { key: 'reference', x: referenceX },
   ];
-  if (unitXs.length > 0) anchors.push({ key: 'unit', x: Math.min(...unitXs) });
-  if (quantityXs.length > 0) anchors.push({ key: 'quantity', x: Math.min(...quantityXs) });
+  const unitX = dominantColumnStart(unitXs);
+  const quantityX = dominantColumnStart(quantityXs);
+  if (unitX !== null) anchors.push({ key: 'unit', x: unitX });
+  if (quantityX !== null) anchors.push({ key: 'quantity', x: quantityX });
 
   anchors.sort((a, b) => a.x - b.x);
   return anchors;
@@ -218,8 +239,40 @@ export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance =
   }
   let open: OpenCandidate | null = null;
 
+  const recoverMisplacedCells = (candidate: OpenCandidate): OpenCandidate => {
+    const words = candidate.nameParts.join(' ').trim().split(/\s+/).filter(Boolean);
+    let unit = candidate.unit.trim();
+    let quantityRaw = candidate.quantityRaw.trim();
+    let unitIndex = -1;
+    let quantityIndex = -1;
+
+    if (!unit || !LIKELY_UNIT_CELL.test(unit.replace(/\s+/g, ''))) {
+      for (let index = words.length - 1; index >= 0; index--) {
+        if (OCR_UNIT_IN_TEXT.test(words[index])) {
+          unit = words[index];
+          unitIndex = index;
+          break;
+        }
+      }
+    }
+    if (!quantityRaw) {
+      for (let index = words.length - 1; index >= 0; index--) {
+        if (index === unitIndex) continue;
+        if (OCR_QUANTITY_IN_TEXT.test(words[index])) {
+          quantityRaw = words[index];
+          quantityIndex = index;
+          break;
+        }
+      }
+    }
+
+    const name = words.filter((_, index) => index !== unitIndex && index !== quantityIndex).join(' ');
+    return { ...candidate, nameParts: [name], unit, quantityRaw };
+  };
+
   const finalize = () => {
     if (!open) return;
+    open = recoverMisplacedCells(open);
     const result = classifyBoqCandidate({
       position: open.position,
       name: open.nameParts.join(' ').trim(),
@@ -277,5 +330,17 @@ export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance =
   }
   finalize();
 
-  return { rows, excluded };
+  const uniqueRows: typeof rows = [];
+  const seenPositions = new Set<string>();
+  for (const row of rows) {
+    const position = row.positionNumber?.trim() ?? '';
+    if (position && seenPositions.has(position)) {
+      excluded.push({ raw: `${position} ${row.name}`, reason: 'Pasikartojantis pozicijos numeris' });
+      continue;
+    }
+    if (position) seenPositions.add(position);
+    uniqueRows.push(row);
+  }
+
+  return { rows: uniqueRows, excluded };
 }

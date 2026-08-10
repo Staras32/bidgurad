@@ -103,7 +103,15 @@ export function classifyBoqCandidate(row: CandidateFields): { accepted: Accepted
   if (!unit) {
     return { rejected: { raw, reason: 'Trūksta mato vieneto' } };
   }
-  const normalizedUnit = unit.toLowerCase().replace(/\s+/g, '').replace(/\.$/, '');
+  const normalizedUnit = unit
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/\.$/, '')
+    .replace(/^m[?]$/, 'm²')
+    .replace(/^m[?]\/t$/, 'm²/t')
+    .replace(/^m3$/, 'm³')
+    .replace(/^m2$/, 'm²')
+    .replace(/\?/g, '²');
   if (!UNIT_TOKEN.test(normalizedUnit)) {
     return { rejected: { raw, reason: `Neatpažintas mato vienetas: ${unit}` } };
   }
