@@ -45,7 +45,7 @@ export function exportSupplierRequestExcel(details: ExportDetails) {
 
   const data = [
     ['Projektas', details.projectName],
-    ['Darbų paketai', packageNames.join(', ')],
+    ['Darbų grupės', packageNames.join(', ')],
     ['Pozicijų skaičius', details.rows.length],
     ['Parengta', generatedAt],
     [],
@@ -194,7 +194,7 @@ export function exportSupplierRequestPdf(details: ExportDetails) {
     context.fillStyle = '#6b7280';
     context.font = '400 18px Arial, sans-serif';
     context.fillText(`Projektas: ${details.projectName}`, margin, 132);
-    context.fillText(`Darbų paketai: ${packageNames.join(', ')}`, margin, 162);
+    context.fillText(`Darbų grupės: ${packageNames.join(', ')}`, margin, 162);
     context.fillText(`Pasirinkta pozicijų: ${details.rows.length}`, margin, 192);
     context.fillText(`Puslapis ${pageNumber}`, width - margin - 110, 92);
     context.fillStyle = '#f3f4f6';
