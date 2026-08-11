@@ -32,6 +32,8 @@ export interface ExcludedBoqLine {
 export interface BoqParseResult {
   fileType: BoqFileType;
   rows: Omit<BoqRow, 'packageId'>[];
+  /** Project/object title read from an explicit estimate title-block label. Never synthesized. */
+  projectNameSuggestion?: string;
   /** Lines the deterministic parser looked at but rejected — section headers, document boilerplate,
    * dates, incomplete rows — each with a concrete reason, shown to the user for transparency. */
   excluded: ExcludedBoqLine[];

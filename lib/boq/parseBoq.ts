@@ -76,6 +76,52 @@ function cellText(row: Row, col: number): string | null {
   return s ? s : null;
 }
 
+const PROJECT_TITLE_LABELS = [
+  /^(?:objekto pavadinimas|statybos objektas|projekto pavadinimas|objektas)\s*[:–—-]?\s*(.*)$/i,
+  /^(?:užsakovas|statytojas)\s*[:–—-]?\s*(.*)$/i,
+] as const;
+
+const PROJECT_TITLE_TERMS = /(?:kapitalin|rekonstr|remont|statyb|gatv|kelio|tako|pastat|infrastruktūr)/i;
+const PROJECT_TITLE_NOISE = /^(?:lokalinė sąmata|sąmata|darbų kiekių žiniaraštis|žiniaraštis|tvirtinu|suderinta|data|lapas|puslapis)/i;
+
+function cleanProjectTitle(value: string | null | undefined): string | null {
+  const cleaned = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s:–—-]+|[\s:–—-]+$/g, '')
+    .trim();
+  if (cleaned.length < 4 || cleaned.length > 120 || PROJECT_TITLE_NOISE.test(cleaned)) return null;
+  return cleaned;
+}
+
+/** Reads only the document title block. Explicit object labels win; customer labels are the fallback. */
+export function detectProjectNameFromRows(allRows: Row[], headerIndex = -1): string | null {
+  const limit = headerIndex >= 0 ? Math.min(headerIndex, 50) : Math.min(allRows.length, 30);
+  const titleRows = allRows.slice(0, limit);
+
+  for (const label of PROJECT_TITLE_LABELS) {
+    for (let rowIndex = 0; rowIndex < titleRows.length; rowIndex++) {
+      const values = titleRows[rowIndex].map((cell) => String(cell ?? '').trim()).filter(Boolean);
+      for (let cellIndex = 0; cellIndex < values.length; cellIndex++) {
+        const match = values[cellIndex].match(label);
+        if (!match) continue;
+        const inlineValue = cleanProjectTitle(match[1]);
+        if (inlineValue) return inlineValue;
+        const sameRowValue = cleanProjectTitle(values[cellIndex + 1]);
+        if (sameRowValue) return sameRowValue;
+        for (let nextRow = rowIndex + 1; nextRow <= Math.min(rowIndex + 2, titleRows.length - 1); nextRow++) {
+          const nextValue = cleanProjectTitle(titleRows[nextRow].map((cell) => String(cell ?? '').trim()).filter(Boolean).join(' '));
+          if (nextValue) return nextValue;
+        }
+      }
+    }
+  }
+
+  const descriptiveCandidates = titleRows
+    .map((row) => cleanProjectTitle(row.map((cell) => String(cell ?? '').trim()).filter(Boolean).join(' ')))
+    .filter((value): value is string => Boolean(value && PROJECT_TITLE_TERMS.test(value)));
+  return descriptiveCandidates.sort((a, b) => b.length - a.length)[0] ?? null;
+}
+
 interface SheetExtraction {
   rows: Omit<BoqRow, 'packageId'>[];
   excluded: ExcludedBoqLine[];
@@ -180,6 +226,7 @@ async function parseXlsx(file: File): Promise<BoqParseResult> {
     const excluded: ExcludedBoqLine[] = [];
     let headerFound = false;
     let readableSheetFound = false;
+    let projectNameSuggestion: string | undefined;
 
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
@@ -187,7 +234,9 @@ async function parseXlsx(file: File): Promise<BoqParseResult> {
       const allRows = XLSX.utils.sheet_to_json<Row>(sheet, { header: 1, blankrows: true });
       if (allRows.length === 0) continue;
       readableSheetFound = true;
-      if (findBoqHeaderRow(allRows) !== -1) headerFound = true;
+      const headerRow = findBoqHeaderRow(allRows);
+      if (headerRow !== -1) headerFound = true;
+      projectNameSuggestion ??= detectProjectNameFromRows(allRows, headerRow) ?? undefined;
       const extracted = rowsFromSheet(allRows, sheetName);
       rows.push(...extracted.rows);
       excluded.push(...extracted.excluded);
@@ -199,7 +248,7 @@ async function parseXlsx(file: File): Promise<BoqParseResult> {
     if (rows.length === 0) {
       return { fileType: 'xlsx', rows: [], excluded, headerFound, error: 'Šiame faile nerasta BOQ pozicijų.' };
     }
-    return { fileType: 'xlsx', rows, excluded, headerFound };
+    return { fileType: 'xlsx', rows, excluded, headerFound, projectNameSuggestion };
   } catch {
     return { fileType: 'xlsx', rows: [], excluded: [], headerFound: false, error: 'Nepavyko nuskaityti failo. Patikrink, ar tai tinkamas Excel failas.' };
   }
@@ -285,9 +334,10 @@ async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => v
   }
 
   if (totalChars > 0) {
+    const projectNameSuggestion = detectProjectNameFromRows(pagesLines[0]?.map((line) => [line]) ?? []) ?? undefined;
     const structured = extractBoqTable(pagesTextTokens);
     if (structured.rows.length > 0) {
-      return { fileType: 'pdf', rows: structured.rows, excluded: structured.excluded, headerFound: true, pdfExtractionMethod: 'text' };
+      return { fileType: 'pdf', rows: structured.rows, excluded: structured.excluded, headerFound: true, pdfExtractionMethod: 'text', projectNameSuggestion };
     }
 
     const legacyExcluded: ExcludedBoqLine[] = [];
@@ -315,7 +365,7 @@ async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => v
       }
     }
     if (legacyRows.length > 0) {
-      return { fileType: 'pdf', rows: legacyRows, excluded: legacyExcluded, headerFound: false, pdfExtractionMethod: 'text' };
+      return { fileType: 'pdf', rows: legacyRows, excluded: legacyExcluded, headerFound: false, pdfExtractionMethod: 'text', projectNameSuggestion };
     }
 
     return {

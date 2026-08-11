@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Clock3, FileSpreadsheet, FolderOpen, LogOut, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { Clock3, FileSpreadsheet, FolderOpen, LogOut, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 
-import { Alert, Button, Card, CardContent, EmptyState, Skeleton } from '@/components/ui';
+import { Alert, Button, Card, CardContent, EmptyState, Input, Skeleton } from '@/components/ui';
 import type { StoredBoqProject } from '@/lib/projects';
 import { getSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
@@ -14,6 +14,9 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<StoredBoqProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -41,6 +44,39 @@ export default function ProjectsPage() {
     const { error: deleteError } = await supabase.from('projects').delete().eq('id', project.id);
     if (deleteError) setError(deleteError.message);
     else setProjects((current) => current.filter((item) => item.id !== project.id));
+  };
+
+  const startRename = (project: StoredBoqProject) => {
+    setEditingId(project.id);
+    setEditingName(project.name);
+    setError('');
+  };
+
+  const renameProject = async (project: StoredBoqProject) => {
+    const name = editingName.trim();
+    if (!name) {
+      setError('Projekto pavadinimas negali būti tuščias.');
+      return;
+    }
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    setRenamingId(project.id);
+    setError('');
+    const { data, error: renameError } = await supabase
+      .from('projects')
+      .update({ name })
+      .eq('id', project.id)
+      .select('name, updated_at')
+      .single();
+    setRenamingId(null);
+    if (renameError || !data) {
+      setError('Nepavyko pakeisti projekto pavadinimo. Bandykite dar kartą.');
+      return;
+    }
+    setProjects((current) => current.map((item) => (
+      item.id === project.id ? { ...item, name: data.name, updated_at: data.updated_at } : item
+    )));
+    setEditingId(null);
   };
 
   return (
@@ -78,9 +114,38 @@ export default function ProjectsPage() {
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between gap-3">
                     <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 text-primary-600"><FileSpreadsheet size={20} /></span>
-                    <button onClick={() => removeProject(project)} aria-label={`Pašalinti ${project.name}`} className="rounded-md p-2 text-gray-300 hover:bg-danger-50 hover:text-danger-600"><Trash2 size={15} /></button>
+                    <div className="flex items-center gap-0.5">
+                      <button type="button" onClick={() => startRename(project)} aria-label={`Pervadinti ${project.name}`} className="rounded-md p-2 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-700"><Pencil size={15} /></button>
+                      <button type="button" onClick={() => removeProject(project)} aria-label={`Pašalinti ${project.name}`} className="rounded-md p-2 text-gray-300 transition-colors hover:bg-danger-50 hover:text-danger-600"><Trash2 size={15} /></button>
+                    </div>
                   </div>
-                  <h2 className="mt-4 truncate font-semibold text-gray-900">{project.name}</h2>
+                  {editingId === project.id ? (
+                    <form
+                      className="mt-4 space-y-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void renameProject(project);
+                      }}
+                    >
+                      <Input
+                        autoFocus
+                        value={editingName}
+                        onChange={(event) => setEditingName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Escape') setEditingId(null);
+                        }}
+                        maxLength={120}
+                        aria-label={`Naujas projekto „${project.name}“ pavadinimas`}
+                        className="font-medium"
+                      />
+                      <div className="flex gap-2">
+                        <Button type="submit" size="sm" isLoading={renamingId === project.id}>Išsaugoti</Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setEditingId(null)}>Atšaukti</Button>
+                      </div>
+                    </form>
+                  ) : (
+                    <h2 className="mt-4 truncate font-semibold text-gray-900" title={project.name}>{project.name}</h2>
+                  )}
                   <p className="mt-1 truncate text-xs text-gray-500">{project.source_file_name}</p>
                   <div className="mt-4 flex items-center gap-3 text-xs text-gray-400">
                     <span>{project.rows.length} pozicijos</span><span>·</span><span>{project.packages.length} paketai</span>

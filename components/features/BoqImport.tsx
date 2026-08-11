@@ -72,6 +72,10 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function fileNameWithoutExtension(name: string): string {
+  return (name.replace(/\.[^.]+$/, '').trim() || 'Naujas BOQ projektas').slice(0, 120);
+}
+
 export function BoqImport() {
   const router = useRouter();
   const [status, setStatus] = useState<ImportStatus>('idle');
@@ -109,6 +113,7 @@ export function BoqImport() {
   const [saveError, setSaveError] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState('');
+  const [suggestedProjectName, setSuggestedProjectName] = useState('');
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
@@ -157,8 +162,10 @@ export function BoqImport() {
   const handleFile = async (files: FileList) => {
     const file = files[0];
     if (!file) return;
+    const fallbackProjectName = fileNameWithoutExtension(file.name);
     setFileName(file.name);
     setFileSize(file.size);
+    setSuggestedProjectName(fallbackProjectName);
     setStatus('reading');
     setError(null);
     setOcrProgress(null);
@@ -168,6 +175,7 @@ export function BoqImport() {
     setFileType(result.fileType);
     setHeaderFound(result.headerFound);
     setPdfExtractionMethod(result.pdfExtractionMethod);
+    setSuggestedProjectName(result.projectNameSuggestion ?? fallbackProjectName);
 
     if (result.error) {
       setStatus('error');
@@ -191,7 +199,7 @@ export function BoqImport() {
     setPackageHistory([]);
     setPackageNameError('');
     setProjectId(null);
-    setProjectName(fileName.replace(/\.[^.]+$/, '') || 'Naujas BOQ projektas');
+    setProjectName(suggestedProjectName || fileNameWithoutExtension(fileName));
     setStatus('ready');
   };
 
@@ -212,6 +220,9 @@ export function BoqImport() {
     setMergeMode(false);
     setMergeSelection(new Set());
     setSelectedRowIds(new Set());
+    setProjectId(null);
+    setProjectName('');
+    setSuggestedProjectName('');
   };
 
   const packageCount = (pkgId: string) => rows.filter((r) => r.packageId === pkgId).length;
@@ -752,6 +763,31 @@ export function BoqImport() {
                 </button>
               </div>
 
+              <Card>
+                <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between">
+                  <label className="block min-w-0 flex-1">
+                    <span className="mb-1.5 block text-xs font-semibold text-gray-700">Projekto pavadinimas</span>
+                    <Input
+                      value={projectName}
+                      onChange={(event) => {
+                        setProjectName(event.target.value);
+                        setSavedNotice(false);
+                      }}
+                      maxLength={120}
+                      aria-label="Projekto pavadinimas"
+                      placeholder="Pvz., Sembos gatvės kapitalinis remontas"
+                      className="h-11 text-base font-medium"
+                    />
+                    <span className="mt-1.5 block text-xs text-gray-500">
+                      {suggestedProjectName && suggestedProjectName !== fileNameWithoutExtension(fileName)
+                        ? 'Pasiūlyta pagal sąmatos antraštę. Jei reikia, pavadinimą pakeiskite.'
+                        : 'Įrašykite objektą arba užsakovą, kad projektą būtų lengva rasti.'}
+                    </span>
+                  </label>
+                  <div className="shrink-0 text-xs text-gray-400 sm:pb-7">Iki 120 simbolių</div>
+                </CardContent>
+              </Card>
+
               {!headerFound && fileType === 'xlsx' && (
                 <Alert variant="warning" title="Antraštės eilutė neaptikta">
                   Nepavyko patikimai atpažinti stulpelių antraščių — pozicijos sudarytos iš pilno eilutės teksto.
@@ -1045,20 +1081,14 @@ export function BoqImport() {
       {status === 'ready' && (
         <footer className="sticky bottom-0 border-t border-gray-100 bg-white/95 backdrop-blur">
           <div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <AlertTriangle size={13} className="shrink-0 text-gray-300" aria-hidden />
-              {userEmail ? `Projektas saugomas paskyroje ${userEmail}` : 'Juodraštis saugomas šiame įrenginyje. Prisijunkite išsaugojimui debesyje.'}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-gray-800">{projectName || fileNameWithoutExtension(fileName)}</p>
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
+                <AlertTriangle size={13} className="shrink-0 text-gray-300" aria-hidden />
+                {userEmail ? `Projektas saugomas paskyroje ${userEmail}` : 'Juodraštis saugomas šiame įrenginyje. Prisijunkite išsaugojimui debesyje.'}
+              </p>
             </div>
             <div className="flex w-full items-center gap-2 sm:w-auto">
-              {userEmail && (
-                <Input
-                  value={projectName}
-                  onChange={(event) => setProjectName(event.target.value)}
-                  aria-label="Projekto pavadinimas"
-                  placeholder="Projekto pavadinimas"
-                  className="h-11"
-                />
-              )}
               <Button variant="primary" size="lg" onClick={saveWorkPackages} isLoading={saving} className="w-full sm:w-auto">
               {!saving && <Save size={18} aria-hidden />}
               {savedNotice ? 'Išsaugota ✓' : userEmail ? 'Išsaugoti projektą' : 'Prisijungti ir išsaugoti'}
