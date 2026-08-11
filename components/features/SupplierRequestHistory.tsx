@@ -28,6 +28,12 @@ function displayDate(value: string): string {
   return new Intl.DateTimeFormat('lt-LT', { dateStyle: 'medium' }).format(new Date(value));
 }
 
+function countLabel(count: number, one: string, few: string, other: string): string {
+  const form = new Intl.PluralRules('lt-LT').select(count);
+  const word = form === 'one' ? one : form === 'few' ? few : other;
+  return `${count.toLocaleString('lt-LT')} ${word}`;
+}
+
 export function SupplierRequestHistory({ projectId, refreshKey }: SupplierRequestHistoryProps) {
   const [requests, setRequests] = useState<StoredSupplierRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,7 +96,9 @@ export function SupplierRequestHistory({ projectId, refreshKey }: SupplierReques
           <CardTitle className="flex items-center gap-2 text-base"><Send size={17} className="text-primary-600" aria-hidden /> Tiekėjų užklausos</CardTitle>
           <CardDescription>Išsaugota darbų apimtis ir atskira būsena kiekvienam gavėjui.</CardDescription>
         </div>
-        {!loading && requests.length > 0 && <Badge variant="neutral">{requests.length} užklausos</Badge>}
+        {!loading && requests.length > 0 && (
+          <Badge variant="neutral">{countLabel(requests.length, 'užklausa', 'užklausos', 'užklausų')}</Badge>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         {error && <Alert variant="error" title="Užklausų istorija">{error}</Alert>}
@@ -109,8 +117,8 @@ export function SupplierRequestHistory({ projectId, refreshKey }: SupplierReques
                 <div className="min-w-0">
                   <h4 className="truncate text-sm font-semibold text-gray-900" title={request.title}>{request.title}</h4>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                    <span>{request.item_count.toLocaleString('lt-LT')} pozicijų</span>
-                    <span>{request.supplier_request_recipients.length} tiekėjai</span>
+                    <span>{countLabel(request.item_count, 'pozicija', 'pozicijos', 'pozicijų')}</span>
+                    <span>{countLabel(request.supplier_request_recipients.length, 'tiekėjas', 'tiekėjai', 'tiekėjų')}</span>
                     <span>Sukurta {displayDate(request.created_at)}</span>
                   </div>
                 </div>
@@ -159,4 +167,3 @@ export function SupplierRequestHistory({ projectId, refreshKey }: SupplierReques
     </Card>
   );
 }
-

@@ -19,7 +19,7 @@ import {
 import type { BoqRow, WorkPackage } from '@/lib/boq/types';
 import { exportSupplierRequestExcel, exportSupplierRequestPdf } from '@/lib/rfq/exportSupplierRequest';
 import { createStoredSupplierRequest, createSupplier, deleteSupplier, listSuppliers } from '@/lib/rfq/repository';
-import { buildSupplierEmail, selectedPackageNames } from '@/lib/rfq/supplierRequest';
+import { buildSupplierEmail, formatPositionCount, selectedPackageNames } from '@/lib/rfq/supplierRequest';
 import type { SupplierContact } from '@/lib/rfq/types';
 
 interface SupplierRequestModalProps {
@@ -228,7 +228,7 @@ export function SupplierRequestModal({
               <h3 id="request-scope-title" className="text-sm font-semibold text-gray-900">Pasirinkta darbų apimtis</h3>
               <p className="mt-1 text-sm text-gray-600">{projectName}</p>
             </div>
-            <Badge variant="info">{rows.length.toLocaleString('lt-LT')} pozicijų</Badge>
+            <Badge variant="info">{formatPositionCount(rows.length)}</Badge>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {packageNames.map((name) => <Badge key={name} variant="neutral">{name}</Badge>)}
@@ -374,4 +374,3 @@ export function SupplierRequestModal({
     </Modal>
   );
 }
-
