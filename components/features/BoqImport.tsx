@@ -17,6 +17,7 @@ import {
   Plus,
   Save,
   ScanSearch,
+  Send,
   ShieldCheck,
   Trash2,
   Undo2,
@@ -60,6 +61,7 @@ import {
   removeEmptyPackage,
   splitRowsIntoPackage,
 } from '@/lib/boq/workPackageOperations';
+import { SupplierRequestModal } from '@/components/features/SupplierRequestModal';
 
 type ImportStatus = 'idle' | 'reading' | 'review' | 'ready' | 'error';
 
@@ -107,6 +109,7 @@ export function BoqImport() {
 
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [newPackageDraft, setNewPackageDraft] = useState<string | null>(null);
+  const [supplierRequestOpen, setSupplierRequestOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
@@ -228,6 +231,7 @@ export function BoqImport() {
   const packageCount = (pkgId: string) => rows.filter((r) => r.packageId === pkgId).length;
   const visibleRows = selectedPackageId ? rows.filter((r) => r.packageId === selectedPackageId) : rows;
   const selectedPackage = packages.find((p) => p.id === selectedPackageId) ?? null;
+  const selectedRequestRows = rows.filter((row) => selectedRowIds.has(row.id));
 
   const recordPackageChange = (label: string) => {
     setPackageHistory((previous) => [...previous.slice(-9), { packages, rows, label }]);
@@ -955,6 +959,10 @@ export function BoqImport() {
                     <div className="flex flex-wrap items-center gap-2">
                       {selectedRowIds.size > 0 && (
                         <>
+                          <Button size="sm" onClick={() => setSupplierRequestOpen(true)}>
+                            <Send size={14} aria-hidden />
+                            Paruošti tiekėjo užklausą ({selectedRowIds.size})
+                          </Button>
                           <select
                             className={selectClass}
                             value=""
@@ -970,6 +978,11 @@ export function BoqImport() {
                             Naujas paketas iš pasirinktų ({selectedRowIds.size})
                           </Button>
                         </>
+                      )}
+                      {selectedRowIds.size === 0 && visibleRows.length > 0 && (
+                        <Button variant="secondary" size="sm" onClick={toggleAllVisibleRows}>
+                          Pasirinkti visą paketą užklausai
+                        </Button>
                       )}
                       {!mergeMode ? (
                         <Button variant="secondary" size="sm" onClick={() => setMergeMode(true)}>
@@ -1099,6 +1112,14 @@ export function BoqImport() {
           </div>
         </footer>
       )}
+
+      <SupplierRequestModal
+        open={supplierRequestOpen && selectedRequestRows.length > 0}
+        onClose={() => setSupplierRequestOpen(false)}
+        projectName={projectName || fileNameWithoutExtension(fileName)}
+        rows={selectedRequestRows}
+        packages={packages}
+      />
     </div>
   );
 }
