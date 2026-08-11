@@ -122,6 +122,10 @@ export function BoqImport() {
   const [suggestedProjectName, setSuggestedProjectName] = useState('');
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
+  const scrollToWorkGroups = () => {
+    document.getElementById('work-groups')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
@@ -207,6 +211,7 @@ export function BoqImport() {
     setProjectId(null);
     setProjectName(suggestedProjectName || fileNameWithoutExtension(fileName));
     setStatus('ready');
+    window.setTimeout(scrollToWorkGroups, 80);
   };
 
   const startOver = () => {
@@ -305,11 +310,11 @@ export function BoqImport() {
     if (!renamingId) return;
     const trimmed = renameValue.trim();
     if (!isPackageNameAvailable(packages, trimmed, renamingId)) {
-      setPackageNameError(trimmed ? 'Paketas tokiu pavadinimu jau yra.' : 'Įvesk paketo pavadinimą.');
+      setPackageNameError(trimmed ? 'Darbų grupė tokiu pavadinimu jau yra.' : 'Įvesk darbų grupės pavadinimą.');
       return;
     }
     if (trimmed) {
-      recordPackageChange('Paketo pervadinimas');
+      recordPackageChange('Darbų grupės pervadinimas');
       setPackages((prev) => prev.map((p) => (p.id === renamingId ? { ...p, name: trimmed, source: 'custom' } : p)));
     }
     setPackageNameError('');
@@ -319,11 +324,11 @@ export function BoqImport() {
   const createPackage = (name: string) => {
     const trimmed = name.trim();
     if (!isPackageNameAvailable(packages, trimmed)) {
-      setPackageNameError(trimmed ? 'Paketas tokiu pavadinimu jau yra.' : 'Įvesk paketo pavadinimą.');
+      setPackageNameError(trimmed ? 'Darbų grupė tokiu pavadinimu jau yra.' : 'Įvesk darbų grupės pavadinimą.');
       return;
     }
     const newPkg: WorkPackage = { id: uid(), name: trimmed, source: 'custom' };
-    recordPackageChange('Naujas paketas');
+    recordPackageChange('Nauja darbų grupė');
     setPackages((prev) => [...prev, newPkg]);
     setSelectedPackageId(newPkg.id);
     setNewPackageDraft(null);
@@ -340,7 +345,7 @@ export function BoqImport() {
 
   const commitMerge = () => {
     if (mergeSelection.size < 2) return;
-    recordPackageChange('Paketų sujungimas');
+    recordPackageChange('Darbų grupių sujungimas');
     const result = mergeWorkPackages(packages, rows, mergeSelection);
     const targetId = result.packages.find((pkg) => mergeSelection.has(pkg.id))?.id ?? result.packages[0]?.id ?? null;
     setRows(result.rows);
@@ -392,7 +397,7 @@ export function BoqImport() {
   const splitSelectedRows = () => {
     if (!selectedPackage || selectedRowIds.size === 0) return;
     const newPkg: WorkPackage = { id: uid(), name: makeUniquePackageName(packages, `${selectedPackage.name} (dalis)`), source: 'custom' };
-    recordPackageChange('Paketo padalijimas');
+    recordPackageChange('Darbų grupės padalijimas');
     const result = splitRowsIntoPackage(packages, rows, selectedRowIds, newPkg);
     setPackages(result.packages);
     setRows(result.rows);
@@ -403,7 +408,7 @@ export function BoqImport() {
   const deleteEmptyPackage = (packageId: string) => {
     const nextPackages = removeEmptyPackage(packages, rows, packageId);
     if (nextPackages === packages) return;
-    recordPackageChange('Tuščio paketo pašalinimas');
+    recordPackageChange('Tuščios darbų grupės pašalinimas');
     setPackages(nextPackages);
     setSelectedPackageId(nextPackages[0]?.id ?? null);
   };
@@ -489,11 +494,13 @@ export function BoqImport() {
               <div>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-600">Projekto sąmatos paruošimas</p>
                 <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Sąmatos importas</h1>
-                <Text muted className="mt-2 max-w-2xl">Patikrink importuotas pozicijas prieš kurdamas darbų paketus.</Text>
+                <Text muted className="mt-2 max-w-2xl">Patikrink importuotas pozicijas prieš kurdamas darbų grupes.</Text>
               </div>
               <Stepper
-                steps={[{ label: 'Įkelti sąmatą' }, { label: 'Patikrinti pozicijas' }, { label: 'Darbų paketai' }]}
+                steps={[{ label: 'Įkelti sąmatą' }, { label: 'Patikrinti pozicijas' }, { label: 'Darbų grupės' }]}
                 currentStep={status === 'review' ? 2 : status === 'ready' ? 3 : 1}
+                clickableSteps={status === 'ready' ? [3] : []}
+                onStepClick={(step) => { if (step === 3) scrollToWorkGroups(); }}
               />
             </div>
           )}
@@ -506,7 +513,7 @@ export function BoqImport() {
                     <FileCheck2 size={13} aria-hidden /> Patikimas sąmatos importas
                   </div>
                   <h1 className="max-w-xl text-4xl font-semibold leading-[1.12] tracking-[-0.035em] text-gray-900 sm:text-5xl">
-                    Nuo dokumento iki aiškių darbų paketų.
+                    Nuo dokumento iki aiškių darbų grupių.
                   </h1>
                   <p className="mt-5 max-w-xl text-base leading-7 text-gray-500">
                     Įkelk užsakovo sąmatą (darbų kiekių žiniaraštį). BidGuard ištrauks tikras pozicijas, atskirs dokumento šiukšles ir
@@ -516,7 +523,7 @@ export function BoqImport() {
                     {[
                       { icon: ScanSearch, title: 'Deterministic patikra', text: 'Pozicijos numeris, pavadinimas, vienetas ir kiekis tikrinami aiškiomis taisyklėmis.' },
                       { icon: FileSpreadsheet, title: 'Excel, PDF ir OCR', text: 'Skirtingi šaltiniai paverčiami į vienodą darbų pozicijų struktūrą.' },
-                      { icon: Layers3, title: 'Kontrolė lieka tau', text: 'Prieš tęsiant matai priimtas bei atmestas eilutes ir pats tvarkai paketus.' },
+                      { icon: Layers3, title: 'Kontrolė lieka tau', text: 'Prieš tęsiant matai priimtas bei atmestas eilutes ir pats tvarkai darbų grupes.' },
                     ].map(({ icon: Icon, title, text }) => (
                       <div key={title} className="flex gap-3.5">
                         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-primary-600 shadow-sm ring-1 ring-gray-200"><Icon size={16} aria-hidden /></span>
@@ -550,7 +557,7 @@ export function BoqImport() {
 
               <div className="mt-8 rounded-xl border border-gray-200 bg-white px-5 py-4 sm:px-7">
                 <Stepper
-                  steps={[{ label: 'Įkelti sąmatą' }, { label: 'Patikrinti pozicijas' }, { label: 'Darbų paketai' }]}
+                  steps={[{ label: 'Įkelti sąmatą' }, { label: 'Patikrinti pozicijas' }, { label: 'Darbų grupės' }]}
                   currentStep={1}
                   className="mx-auto max-w-2xl"
                 />
@@ -579,7 +586,7 @@ export function BoqImport() {
           {status === 'review' && (
             <div className="animate-fade-in space-y-4">
               <Alert variant="success" title={`Aptikta darbų pozicijų: ${pendingRows.length.toLocaleString('lt-LT')}`}>
-                Importas dar nepatvirtintas. Peržiūrėk priimtas pozicijas ir atmestas dokumento eilutes — darbų paketai
+                Importas dar nepatvirtintas. Peržiūrėk priimtas pozicijas ir atmestas dokumento eilutes — darbų grupės
                 bus formuojami tik po tavo patvirtinimo.
               </Alert>
 
@@ -603,7 +610,7 @@ export function BoqImport() {
 
               {criticalIssueCount > 0 && (
                 <Alert variant="warning" title="Prieš tęsiant reikia pataisyti pažymėtas eilutes">
-                  Dublikuotos sąmatos eilutės, tušti laukai ir netinkami kiekiai pažymėti lentelėje. Paketai nebus kuriami, kol liks kritinių klaidų.
+                  Dublikuotos sąmatos eilutės, tušti laukai ir netinkami kiekiai pažymėti lentelėje. Darbų grupės nebus kuriamos, kol liks kritinių klaidų.
                 </Alert>
               )}
 
@@ -612,7 +619,7 @@ export function BoqImport() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <CardTitle className="text-base">Sąmatos peržiūra ir taisymas</CardTitle>
-                      <CardDescription className="mt-1">Spustelėk lauką ir pataisyk parserio rezultatą. Pakeitimai bus naudojami darbų paketams.</CardDescription>
+                      <CardDescription className="mt-1">Spustelėk lauką ir pataisyk parserio rezultatą. Pakeitimai bus naudojami darbų grupėms.</CardDescription>
                     </div>
                     {removedRows.length > 0 && (
                       <Button variant="secondary" size="sm" onClick={restoreLastRemovedRow}>
@@ -821,14 +828,14 @@ export function BoqImport() {
                 </Alert>
               )}
 
-              <div className="grid grid-cols-1 gap-5 lg:grid-cols-[320px_1fr]">
+              <div id="work-groups" className="scroll-mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[320px_1fr]">
                 {/* Left: Work Packages */}
                 <Card className="h-fit">
                   <CardHeader>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <CardTitle className="text-base">Darbų paketai</CardTitle>
-                        <CardDescription>{packages.length} paketai · pasirink paketą ir tvarkyk jo pozicijas</CardDescription>
+                        <CardTitle className="text-base">Darbų grupės</CardTitle>
+                        <CardDescription>{packages.length} darbų grupių · pasirink grupę ir tvarkyk jos pozicijas</CardDescription>
                       </div>
                       {packageHistory.length > 0 && (
                         <Button variant="ghost" size="sm" onClick={undoPackageChange} title={packageHistory.at(-1)?.label}>
@@ -913,7 +920,7 @@ export function BoqImport() {
                                         e.stopPropagation();
                                         deleteEmptyPackage(pkg.id);
                                       }}
-                                      aria-label={`Pašalinti tuščią paketą ${pkg.name}`}
+                                      aria-label={`Pašalinti tuščią darbų grupę ${pkg.name}`}
                                       className="rounded p-1 text-gray-300 hover:bg-danger-50 hover:text-danger-600"
                                     >
                                       <Trash2 size={12} />
@@ -933,7 +940,7 @@ export function BoqImport() {
                             autoFocus
                             value={newPackageDraft}
                             onChange={(e) => setNewPackageDraft(e.target.value)}
-                            placeholder="Naujo paketo pavadinimas"
+                            placeholder="Naujos darbų grupės pavadinimas"
                             className="h-8 text-sm"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') createPackage(newPackageDraft);
@@ -951,7 +958,7 @@ export function BoqImport() {
                           className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-200 py-2.5 text-xs font-medium text-gray-500 transition-colors duration-150 ease-out hover:border-primary-400 hover:bg-primary-50/40 hover:text-primary-600"
                         >
                           <Plus size={14} />
-                          Naujas paketas
+                          Nauja darbų grupė
                         </button>
                       )}
                       {packageNameError && <p className="mt-2 text-xs text-danger-600">{packageNameError}</p>}
@@ -985,18 +992,18 @@ export function BoqImport() {
                             ))}
                           </select>
                           <Button variant="secondary" size="sm" onClick={splitSelectedRows}>
-                            Naujas paketas iš pasirinktų ({selectedRowIds.size})
+                            Nauja darbų grupė iš pasirinktų ({selectedRowIds.size})
                           </Button>
                         </>
                       )}
                       {selectedRowIds.size === 0 && visibleRows.length > 0 && (
                         <Button variant="secondary" size="sm" onClick={toggleAllVisibleRows}>
-                          Pasirinkti visą paketą užklausai
+                          Pasirinkti visą grupę užklausai
                         </Button>
                       )}
                       {!mergeMode ? (
                         <Button variant="secondary" size="sm" onClick={() => setMergeMode(true)}>
-                          Sujungti paketus
+                          Sujungti darbų grupes
                         </Button>
                       ) : (
                         <>
@@ -1021,8 +1028,8 @@ export function BoqImport() {
                     {visibleRows.length === 0 ? (
                       <div className="p-6">
                         <EmptyState
-                          title="Šiame pakete pozicijų nėra"
-                          description="Pertempk eilutes iš kito paketo (dešinėje esančios lentelės eilutę nuvilk ant paketo kairėje) arba pasirink „Perkelti į“ eilutėje."
+                          title="Šioje darbų grupėje pozicijų nėra"
+                          description="Pertempk eilutes iš kitos grupės (dešinėje esančios lentelės eilutę nuvilk ant grupės kairėje) arba pasirink „Perkelti į“ eilutėje."
                         />
                       </div>
                     ) : (
@@ -1081,7 +1088,7 @@ export function BoqImport() {
                                   className={selectClass}
                                   value={row.packageId}
                                   onChange={(e) => moveRowToPackage(row.id, e.target.value)}
-                                  aria-label={`Perkelti „${row.name}“ į kitą paketą`}
+                                  aria-label={`Perkelti „${row.name}“ į kitą darbų grupę`}
                                 >
                                   {packages.map((p) => (
                                     <option key={p.id} value={p.id}>
