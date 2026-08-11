@@ -245,19 +245,21 @@ export function BoqImport() {
     setMergeSelection(new Set());
   };
 
-  const duplicatePositions = useMemo(() => {
-    const counts = new Map<string, number>();
+  const duplicateRowIds = useMemo(() => {
+    const rowsBySignature = new Map<string, string[]>();
     for (const row of pendingRows) {
-      const position = row.positionNumber?.trim();
-      if (position) counts.set(position, (counts.get(position) ?? 0) + 1);
+      const signature = [row.positionNumber, row.name, row.unit, row.quantity]
+        .map((value) => String(value ?? '').trim().toLocaleLowerCase('lt-LT'))
+        .join('|');
+      rowsBySignature.set(signature, [...(rowsBySignature.get(signature) ?? []), row.id]);
     }
-    return new Set([...counts].filter(([, count]) => count > 1).map(([position]) => position));
+    return new Set([...rowsBySignature.values()].filter((ids) => ids.length > 1).flat());
   }, [pendingRows]);
 
   const issuesForRow = (row: Omit<BoqRow, 'packageId'>): string[] => {
     const issues: string[] = [];
     if (!row.positionNumber?.trim()) issues.push('Trūksta pozicijos numerio');
-    if (row.positionNumber && duplicatePositions.has(row.positionNumber.trim())) issues.push('Pasikartojantis pozicijos numeris');
+    if (duplicateRowIds.has(row.id)) issues.push('Pasikartojanti BOQ eilutė');
     if (!row.name.trim()) issues.push('Trūksta pavadinimo');
     if (!row.unit?.trim()) issues.push('Trūksta mato vieneto');
     if (row.quantity === null || !Number.isFinite(row.quantity)) issues.push('Trūksta kiekio');
@@ -594,7 +596,7 @@ export function BoqImport() {
 
               {criticalIssueCount > 0 && (
                 <Alert variant="warning" title="Prieš tęsiant reikia pataisyti pažymėtas eilutes">
-                  Dublikuoti pozicijų numeriai, tušti laukai ir netinkami kiekiai pažymėti lentelėje. Paketai nebus kuriami, kol liks kritinių klaidų.
+                  Dublikuotos BOQ eilutės, tušti laukai ir netinkami kiekiai pažymėti lentelėje. Paketai nebus kuriami, kol liks kritinių klaidų.
                 </Alert>
               )}
 
@@ -637,7 +639,7 @@ export function BoqImport() {
                                   value={row.positionNumber ?? ''}
                                   onChange={(event) => updatePendingRow(row.id, 'positionNumber', event.target.value || null)}
                                   aria-label={`Pozicijos numeris: ${row.name}`}
-                                  className={cn('h-8 font-mono text-xs tabular-nums', hasIssues && (!row.positionNumber?.trim() || duplicatePositions.has(row.positionNumber.trim())) && 'border-warning-400')}
+                                  className={cn('h-8 font-mono text-xs tabular-nums', hasIssues && (!row.positionNumber?.trim() || duplicateRowIds.has(row.id)) && 'border-warning-400')}
                                 />
                               </TableCell>
                               <TableCell className="min-w-[300px]">

@@ -4,6 +4,7 @@ import type { BoqFileType, BoqParseResult, BoqRow, ExcludedBoqLine } from './typ
 import { extractBoqTable, type PositionedToken } from './reconstructTable';
 import { classifyBoqCandidate } from './boqRowRules';
 import { ocrPdfPages, type OcrProgress } from './ocrPdf';
+import { PDFJS_DOCUMENT_OPTIONS } from './pdfjsConfig';
 
 type Row = (string | number | undefined)[];
 
@@ -294,7 +295,7 @@ async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => v
     pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
     const buffer = await file.arrayBuffer();
-    const doc = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const doc = await pdfjsLib.getDocument({ data: buffer, ...PDFJS_DOCUMENT_OPTIONS }).promise;
 
     for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
       const page = await doc.getPage(pageNum);

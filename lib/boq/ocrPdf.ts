@@ -1,4 +1,5 @@
 import type { PositionedToken } from './reconstructTable';
+import { PDFJS_DOCUMENT_OPTIONS } from './pdfjsConfig';
 
 export interface OcrProgress {
   page: number;
@@ -69,7 +70,7 @@ export async function ocrPdfPages(file: File, onProgress?: (progress: OcrProgres
   pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
   const buffer = await file.arrayBuffer();
-  const doc = await pdfjsLib.getDocument({ data: buffer }).promise;
+  const doc = await pdfjsLib.getDocument({ data: buffer, ...PDFJS_DOCUMENT_OPTIONS }).promise;
 
   const { createWorker } = await import('tesseract.js');
   const worker = await createWorker('lit');

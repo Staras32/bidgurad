@@ -1,6 +1,6 @@
 import { uid } from '@/lib/uid';
 import type { BoqRow } from './types';
-import { ANCHOR_POSITION_TOKEN, POSITION_NUMBER, classifyBoqCandidate, type ExcludedLine } from './boqRowRules';
+import { POSITION_NUMBER, classifyBoqCandidate, type ExcludedLine } from './boqRowRules';
 
 /** A single word/text fragment positioned on a page. Y increases downward (screen/image convention). */
 export interface PositionedToken {
@@ -73,10 +73,33 @@ function groupIntoRows(tokens: PositionedToken[], yTolerance: number): Positione
 }
 
 type ValueColumnKey = 'name' | 'unit' | 'quantity' | 'reference';
+type InternalColumnKey = ValueColumnKey | 'ignore';
 
 interface ColumnAnchor {
-  key: ValueColumnKey;
+  key: InternalColumnKey;
   x: number;
+}
+
+interface DetectedColumns {
+  positionX: number;
+  anchors: ColumnAnchor[];
+}
+
+interface XCluster {
+  count: number;
+  min: number;
+  median: number;
+}
+
+function clusterXValues(values: number[], tolerance: number): XCluster[] {
+  const sorted = [...values].sort((a, b) => a - b);
+  const groups: number[][] = [];
+  for (const value of sorted) {
+    const group = groups.at(-1);
+    if (group && value - group.at(-1)! <= tolerance) group.push(value);
+    else groups.push([value]);
+  }
+  return groups.map((group) => ({ count: group.length, min: Math.min(...group), median: median(group) }));
 }
 
 /**
@@ -86,13 +109,26 @@ interface ColumnAnchor {
  * recognized — so they make a far more robust anchor than header keyword matching. The position number
  * itself is deliberately NOT one of these X-anchors — see extractPositionToken.
  */
-function detectColumnAnchors(tokens: PositionedToken[]): ColumnAnchor[] {
-  const positionMatches = tokens.filter((t) => ANCHOR_POSITION_TOKEN.test(t.text.trim()));
+function detectColumnAnchors(tokens: PositionedToken[]): DetectedColumns | null {
+  const allPositionCandidates = tokens.filter((t) => POSITION_NUMBER.test(t.text.trim()));
   const referenceMatches = tokens.filter((t) => REFERENCE_TOKEN.test(t.text.trim()));
-  if (positionMatches.length < 2 || referenceMatches.length < 2) return [];
+  if (allPositionCandidates.length < 2) return null;
 
-  const positionX = median(positionMatches.map((t) => t.x));
-  const referenceX = median(referenceMatches.map((t) => t.x));
+  // The left-most repeated numeric X band is the position column. This must consider flat numbers as
+  // well as dotted ones: prices such as 39.13 also match the dotted position syntax, so using all dotted
+  // tokens would incorrectly calibrate the parser to a price column in local-estimate PDFs.
+  const minX = Math.min(...tokens.map((t) => t.x));
+  const maxX = Math.max(...tokens.map((t) => t.x2));
+  const leftLimit = minX + (maxX - minX) * 0.4;
+  const positionClusters = clusterXValues(allPositionCandidates.map((t) => t.x), 32)
+    .filter((cluster) => cluster.count >= 2 && cluster.median <= leftLimit)
+    .sort((a, b) => b.count - a.count || a.median - b.median);
+  if (positionClusters.length === 0) return null;
+  const positionX = positionClusters[0].median;
+
+  const positionMatches = allPositionCandidates.filter((t) => Math.abs(t.x - positionX) <= 38);
+  if (positionMatches.length < 2) return null;
+  const referenceX = referenceMatches.length >= 2 ? median(referenceMatches.map((t) => t.x)) : null;
 
   // Name starts right after the position number on the same line — sample real gaps. A low percentile
   // (rather than the median) is used so the boundary sits safely left of essentially every real name
@@ -114,29 +150,43 @@ function detectColumnAnchors(tokens: PositionedToken[]): ColumnAnchor[] {
     nameX = sorted[Math.max(0, Math.floor(sorted.length * 0.15))] - 5;
   }
 
-  // Unit + quantity live in the band between the name column and the reference column.
-  // Split by content: tokens with letters are unit-like, purely numeric ones are quantity-like.
-  const valueZoneMargin = 550;
+  // Unit and quantity are derived independently from repeated X bands. The TS/reference column is
+  // optional: Lithuanian local estimates often continue with unit-price and total-price columns instead.
   const unitXs: number[] = [];
-  const quantityXs: number[] = [];
   for (const t of tokens) {
     const text = t.text.trim();
-    if (!text || t.x <= nameX || t.x >= referenceX - 20 || t.x < referenceX - valueZoneMargin) continue;
-    if (NUMERIC_CELL.test(text)) quantityXs.push(t.x);
-    else if (LIKELY_UNIT_CELL.test(text.replace(/\s+/g, ''))) unitXs.push(t.x);
+    if (!text || t.x <= nameX + 30 || (referenceX !== null && t.x >= referenceX - 20)) continue;
+    if (LIKELY_UNIT_CELL.test(text.replace(/\s+/g, ''))) unitXs.push(t.x);
   }
 
-  const anchors: ColumnAnchor[] = [
-    { key: 'name', x: nameX },
-    { key: 'reference', x: referenceX },
-  ];
+  const anchors: ColumnAnchor[] = [{ key: 'name', x: nameX }];
   const unitX = dominantColumnStart(unitXs);
-  const quantityX = dominantColumnStart(quantityXs);
   if (unitX !== null) anchors.push({ key: 'unit', x: unitX });
-  if (quantityX !== null) anchors.push({ key: 'quantity', x: quantityX });
+
+  if (unitX !== null) {
+    const numericClusters = clusterXValues(
+      tokens
+        .filter((t) => NUMERIC_CELL.test(t.text.trim()) && t.x > unitX + 25 && (referenceX === null || t.x < referenceX - 20))
+        .map((t) => t.x),
+      28
+    )
+      .filter((cluster) => cluster.count >= 2)
+      .sort((a, b) => a.median - b.median);
+
+    // Quantity is the first repeated numeric column after the unit. Any following numeric column belongs
+    // to pricing/totals and is intentionally ignored by the BOQ importer.
+    const quantityCluster = numericClusters[0];
+    if (quantityCluster) {
+      anchors.push({ key: 'quantity', x: quantityCluster.min - 8 });
+      const nextNumericCluster = numericClusters.find((cluster) => cluster.median > quantityCluster.median + 45);
+      if (nextNumericCluster) anchors.push({ key: 'ignore', x: nextNumericCluster.min - 8 });
+    }
+  }
+
+  if (referenceX !== null) anchors.push({ key: 'reference', x: referenceX });
 
   anchors.sort((a, b) => a.x - b.x);
-  return anchors;
+  return { positionX, anchors };
 }
 
 /**
@@ -144,15 +194,15 @@ function detectColumnAnchors(tokens: PositionedToken[]): ColumnAnchor[] {
  * a position number's X is too close to the Name column's start for any boundary to reliably separate them
  * across a whole page of OCR jitter.
  */
-function extractPositionToken(row: PositionedToken[]): PositionedToken | null {
+function extractPositionToken(row: PositionedToken[], positionX: number): PositionedToken | null {
   for (const t of row) {
-    if (POSITION_NUMBER.test(t.text.trim())) return t;
+    if (Math.abs(t.x - positionX) <= 42 && POSITION_NUMBER.test(t.text.trim())) return t;
   }
   return null;
 }
 
 function assignRowToColumns(row: PositionedToken[], anchors: ColumnAnchor[]): Record<ValueColumnKey, string> {
-  const cells: Record<ValueColumnKey, string[]> = { name: [], unit: [], quantity: [], reference: [] };
+  const cells: Record<InternalColumnKey, string[]> = { name: [], unit: [], quantity: [], reference: [], ignore: [] };
   for (const token of row) {
     let owner: ColumnAnchor | null = null;
     for (const anchor of anchors) {
@@ -178,21 +228,25 @@ interface RawLine {
 
 function classifyLines(pagesTokens: PositionedToken[][], rowTolerance: number): RawLine[] {
   const lines: RawLine[] = [];
-  let lastAnchors: ColumnAnchor[] = [];
+  let lastColumns: DetectedColumns | null = null;
 
   for (const [pageIndex, rawPageTokens] of pagesTokens.entries()) {
     const pageTokens = cleanTokens(rawPageTokens);
     if (pageTokens.length === 0) continue;
 
-    const anchors = detectColumnAnchors(pageTokens);
-    const activeAnchors = anchors.length > 0 ? anchors : lastAnchors;
-    if (anchors.length > 0) lastAnchors = anchors;
-    if (activeAnchors.length === 0) continue;
+    const detectedColumns = detectColumnAnchors(pageTokens);
+    // This first supported template keeps the same table geometry on every page. Preserve the first
+    // reliable calibration so a sparse continuation page cannot mistake a price band for a BOQ column.
+    const activeColumns = lastColumns ?? detectedColumns;
+    if (!lastColumns && detectedColumns) lastColumns = detectedColumns;
+    if (!activeColumns) continue;
 
     // The header row (unreadable or not) always sits above the first real position row —
     // skip anything above that line so garbled header text never merges into a previous page's row.
     const firstRowY = Math.min(
-      ...pageTokens.filter((t) => POSITION_NUMBER.test(t.text.trim())).map((t) => t.y),
+      ...pageTokens
+        .filter((t) => Math.abs(t.x - activeColumns.positionX) <= 42 && POSITION_NUMBER.test(t.text.trim()))
+        .map((t) => t.y),
       Infinity
     );
 
@@ -200,9 +254,9 @@ function classifyLines(pagesTokens: PositionedToken[][], rowTolerance: number): 
     for (const row of rows) {
       if (Number.isFinite(firstRowY) && row[0].y < firstRowY - rowTolerance) continue;
 
-      const positionToken = extractPositionToken(row);
+      const positionToken = extractPositionToken(row, activeColumns.positionX);
       const remainingRow = positionToken ? row.filter((t) => t !== positionToken) : row;
-      const cells = assignRowToColumns(remainingRow, activeAnchors);
+      const cells = assignRowToColumns(remainingRow, activeColumns.anchors);
       lines.push({ position: positionToken ? positionToken.text.trim() : '', name: cells.name.trim(), cells, sourceReference: `PDF, ${pageIndex + 1} psl.` });
     }
   }
@@ -306,6 +360,11 @@ export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance =
     }
 
     const combined = [line.name, line.cells.unit, line.cells.quantity, line.cells.reference].filter(Boolean).join(' ').trim();
+    if (/\bskyriuje\s+\d+\b/i.test(combined)) {
+      finalize();
+      excluded.push({ raw: combined, reason: 'Skyriaus suvestinė / antraštė' });
+      continue;
+    }
     if (!combined) continue; // truly empty — not worth reporting
 
     const noise = classifyBoqCandidate({ position: '', name: line.name, unit: '', quantityRaw: '' });
@@ -331,14 +390,16 @@ export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance =
   finalize();
 
   const uniqueRows: typeof rows = [];
-  const seenPositions = new Set<string>();
+  const seenRows = new Set<string>();
   for (const row of rows) {
-    const position = row.positionNumber?.trim() ?? '';
-    if (position && seenPositions.has(position)) {
-      excluded.push({ raw: `${position} ${row.name}`, reason: 'Pasikartojantis pozicijos numeris' });
+    const key = [row.positionNumber, row.name, row.unit, row.quantity]
+      .map((value) => String(value ?? '').trim().toLocaleLowerCase('lt-LT'))
+      .join('|');
+    if (seenRows.has(key)) {
+      excluded.push({ raw: `${row.positionNumber ?? ''} ${row.name}`, reason: 'Pasikartojanti BOQ eilutė' });
       continue;
     }
-    if (position) seenPositions.add(position);
+    seenRows.add(key);
     uniqueRows.push(row);
   }
 
