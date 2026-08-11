@@ -38,7 +38,9 @@ npm run dev
 BidGuard naudoja Supabase autentifikacijai ir vartotojui priklausantiems BOQ projektams.
 
 1. Sukurkite Supabase projektą.
-2. SQL Editor lange paleiskite `supabase/migrations/001_projects.sql`.
+2. SQL Editor lange eilės tvarka paleiskite migracijas:
+   - `supabase/migrations/001_projects.sql`
+   - `supabase/migrations/002_supplier_requests.sql`
 3. Vercel projekto aplinkos kintamuosiuose pridėkite:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (senesniuose projektuose galima naudoti `NEXT_PUBLIC_SUPABASE_ANON_KEY`)

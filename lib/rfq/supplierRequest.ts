@@ -24,6 +24,20 @@ export function formatLithuanianDate(value: string): string {
   }).format(date);
 }
 
+export function formatPositionCount(count: number): string {
+  const form = new Intl.PluralRules('lt-LT').select(count);
+  const word = form === 'one' ? 'pozicija' : form === 'few' ? 'pozicijos' : 'pozicijų';
+  return `${count.toLocaleString('lt-LT')} sąmatos ${word}`;
+}
+
+export function personalizeSupplierEmail(body: string, recipientName: string): string {
+  const name = recipientName.trim();
+  if (!name) return body;
+  const lines = body.split('\n');
+  if (lines[0]?.startsWith('Sveiki')) lines[0] = `Sveiki, ${name},`;
+  return lines.join('\n');
+}
+
 export function buildSupplierEmail(details: SupplierRequestDetails): { subject: string; body: string } {
   const packageNames = selectedPackageNames(details.rows, details.packages);
   const scopeName = packageNames.join(', ') || 'pasirinkta darbų apimtis';
@@ -38,7 +52,7 @@ export function buildSupplierEmail(details: SupplierRequestDetails): { subject: 
     '',
     'Prašoma darbų apimtis:',
     ...packageNames.map((name) => `• ${name}`),
-    `• ${details.rows.length.toLocaleString('lt-LT')} sąmatos pozicijų`,
+    `• ${formatPositionCount(details.rows.length)}`,
     '',
     'Detali darbų apimtis ir kiekiai pateikti pridedamame faile.',
     '',
@@ -57,4 +71,3 @@ export function buildSupplierEmail(details: SupplierRequestDetails): { subject: 
 
   return { subject, body };
 }
-

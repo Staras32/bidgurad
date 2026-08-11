@@ -62,6 +62,7 @@ import {
   splitRowsIntoPackage,
 } from '@/lib/boq/workPackageOperations';
 import { SupplierRequestModal } from '@/components/features/SupplierRequestModal';
+import { SupplierRequestHistory } from '@/components/features/SupplierRequestHistory';
 
 type ImportStatus = 'idle' | 'reading' | 'review' | 'ready' | 'error';
 
@@ -110,6 +111,8 @@ export function BoqImport() {
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [newPackageDraft, setNewPackageDraft] = useState<string | null>(null);
   const [supplierRequestOpen, setSupplierRequestOpen] = useState(false);
+  const [supplierRequestRefreshKey, setSupplierRequestRefreshKey] = useState(0);
+  const [supplierRequestSaved, setSupplierRequestSaved] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
@@ -749,6 +752,11 @@ export function BoqImport() {
           {status === 'ready' && (
             <div className="animate-fade-in space-y-5 pb-28">
               {saveError && <Alert variant="error" title="Projekto saugojimas">{saveError}</Alert>}
+              {supplierRequestSaved && (
+                <Alert variant="success" title="Tiekėjų užklausa išsaugota">
+                  Pasirinkta darbų apimtis ir atskiri gavėjai pridėti prie projekto istorijos.
+                </Alert>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                   <Badge variant="neutral">{fileName}</Badge>
@@ -793,6 +801,8 @@ export function BoqImport() {
                   <div className="shrink-0 text-xs text-gray-400 sm:pb-7">Iki 120 simbolių</div>
                 </CardContent>
               </Card>
+
+              {projectId && <SupplierRequestHistory projectId={projectId} refreshKey={supplierRequestRefreshKey} />}
 
               {!headerFound && fileType === 'xlsx' && (
                 <Alert variant="warning" title="Antraštės eilutė neaptikta">
@@ -1116,6 +1126,12 @@ export function BoqImport() {
       <SupplierRequestModal
         open={supplierRequestOpen && selectedRequestRows.length > 0}
         onClose={() => setSupplierRequestOpen(false)}
+        onSaved={() => {
+          setSupplierRequestSaved(true);
+          setSupplierRequestRefreshKey((value) => value + 1);
+          window.setTimeout(() => setSupplierRequestSaved(false), 4000);
+        }}
+        projectId={projectId}
         projectName={projectName || fileNameWithoutExtension(fileName)}
         rows={selectedRequestRows}
         packages={packages}
