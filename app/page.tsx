@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { BoqImport } from '@/components/features/BoqImport';
 
 export const metadata: Metadata = {
-  title: 'BOQ importas – BidGuard',
+  title: 'Darbų kiekių žiniaraščio importas – BidGuard',
   description: 'Importuokite realų Excel arba PDF darbų žiniaraštį, patikrinkite pozicijas ir suformuokite darbų paketus.',
 };
 

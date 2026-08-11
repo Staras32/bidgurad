@@ -247,7 +247,7 @@ async function parseXlsx(file: File): Promise<BoqParseResult> {
       return { fileType: 'xlsx', rows: [], excluded: [], headerFound: false, error: 'Šis failas atrodo tuščias.' };
     }
     if (rows.length === 0) {
-      return { fileType: 'xlsx', rows: [], excluded, headerFound, error: 'Šiame faile nerasta BOQ pozicijų.' };
+      return { fileType: 'xlsx', rows: [], excluded, headerFound, error: 'Šiame faile nerasta darbų pozicijų.' };
     }
     return { fileType: 'xlsx', rows, excluded, headerFound, projectNameSuggestion };
   } catch {
@@ -374,7 +374,7 @@ async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => v
       rows: [],
       excluded: [...structured.excluded, ...legacyExcluded],
       headerFound: false,
-      error: 'Iš šio PDF nepavyko ištraukti BOQ pozicijų. Failas turi teksto sluoksnį, bet jame neaptikta atpažįstamų pozicijų.',
+      error: 'Iš šio PDF nepavyko ištraukti darbų pozicijų. Failas turi teksto sluoksnį, bet jame neaptikta atpažįstamų pozicijų.',
     };
   }
 
@@ -389,7 +389,7 @@ async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => v
         excluded: ocrResult.excluded,
         headerFound: false,
         pdfExtractionMethod: 'ocr',
-        error: 'Iš šio PDF nepavyko ištraukti BOQ pozicijų. Galimai tai nuskenuotas vaizdas be pažymimo teksto.',
+        error: 'Iš šio PDF nepavyko ištraukti darbų pozicijų. Galimai tai nuskenuotas vaizdas be pažymimo teksto.',
       };
     }
     return { fileType: 'pdf', rows: ocrResult.rows, excluded: ocrResult.excluded, headerFound: true, pdfExtractionMethod: 'ocr' };

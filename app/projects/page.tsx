@@ -95,9 +95,9 @@ export default function ProjectsPage() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600">Darbo erdvė</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-gray-900">Mano projektai</h1>
-            <p className="mt-2 text-sm text-gray-500">BOQ dokumentai ir patvirtinti darbų paketai vienoje vietoje.</p>
+            <p className="mt-2 text-sm text-gray-500">Darbų kiekių žiniaraščiai ir patvirtinti darbų paketai vienoje vietoje.</p>
           </div>
-          <Link href="/"><Button size="lg"><Plus size={18} /> Naujas BOQ projektas</Button></Link>
+          <Link href="/"><Button size="lg"><Plus size={18} /> Naujas žiniaraščio projektas</Button></Link>
         </div>
 
         {!isSupabaseConfigured() && <Alert variant="warning" title="Projektų saugykla dar neaktyvuota" className="mt-6">Reikia pridėti Supabase aplinkos raktus ir paleisti duomenų bazės migraciją.</Alert>}
@@ -106,7 +106,7 @@ export default function ProjectsPage() {
         {loading ? (
           <div className="mt-7 grid gap-4 md:grid-cols-2 lg:grid-cols-3">{[1,2,3].map((n) => <Skeleton key={n} className="h-44" />)}</div>
         ) : projects.length === 0 ? (
-          <Card className="mt-7"><CardContent className="py-14"><EmptyState icon={<FolderOpen size={28} />} title="Dar nėra išsaugotų projektų" description="Importuokite pirmą BOQ, patikrinkite pozicijas ir išsaugokite darbų paketus." action={<Link href="/"><Button>Importuoti BOQ</Button></Link>} /></CardContent></Card>
+          <Card className="mt-7"><CardContent className="py-14"><EmptyState icon={<FolderOpen size={28} />} title="Dar nėra išsaugotų projektų" description="Importuokite pirmą darbų kiekių žiniaraštį, patikrinkite pozicijas ir išsaugokite darbų paketus." action={<Link href="/"><Button>Importuoti žiniaraštį</Button></Link>} /></CardContent></Card>
         ) : (
           <div className="mt-7 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {projects.map((project) => (

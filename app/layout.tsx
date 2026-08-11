@@ -12,7 +12,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'BidGuard – konkursinių sąmatų ir pasiūlymų rizikos valdymas',
   description:
-    'Išmani BOQ analizė, konkursinių sąmatų valdymas ir subrangovų pasiūlymų rizikos kontrolė.',
+    'Darbų kiekių žiniaraščių analizė, konkursinių sąmatų valdymas ir subrangovų pasiūlymų rizikos kontrolė.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

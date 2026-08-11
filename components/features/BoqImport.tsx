@@ -73,7 +73,7 @@ function formatFileSize(bytes: number): string {
 }
 
 function fileNameWithoutExtension(name: string): string {
-  return (name.replace(/\.[^.]+$/, '').trim() || 'Naujas BOQ projektas').slice(0, 120);
+  return (name.replace(/\.[^.]+$/, '').trim() || 'Naujas žiniaraščio projektas').slice(0, 120);
 }
 
 export function BoqImport() {
@@ -259,7 +259,7 @@ export function BoqImport() {
   const issuesForRow = (row: Omit<BoqRow, 'packageId'>): string[] => {
     const issues: string[] = [];
     if (!row.positionNumber?.trim()) issues.push('Trūksta pozicijos numerio');
-    if (duplicateRowIds.has(row.id)) issues.push('Pasikartojanti BOQ eilutė');
+    if (duplicateRowIds.has(row.id)) issues.push('Pasikartojanti žiniaraščio eilutė');
     if (!row.name.trim()) issues.push('Trūksta pavadinimo');
     if (!row.unit?.trim()) issues.push('Trūksta mato vieneto');
     if (row.quantity === null || !Number.isFinite(row.quantity)) issues.push('Trūksta kiekio');
@@ -425,7 +425,7 @@ export function BoqImport() {
 
       const payload = {
         owner_id: auth.user.id,
-        name: projectName.trim() || fileName.replace(/\.[^.]+$/, '') || 'BOQ projektas',
+        name: projectName.trim() || fileName.replace(/\.[^.]+$/, '') || 'Žiniaraščio projektas',
         source_file_name: fileName,
         source_file_size: fileSize,
         packages,
@@ -457,11 +457,11 @@ export function BoqImport() {
             </span>
             <span className="text-base font-semibold tracking-tight">BidGuard</span>
             <span className="hidden rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-500 sm:inline">
-              BOQ workflow
+              Darbų kiekių žiniaraštis
             </span>
           </Link>
           <div className="flex items-center gap-4">
-            <span className="hidden text-xs text-gray-400 md:inline">BOQ yra pagrindinis tiesos šaltinis</span>
+            <span className="hidden text-xs text-gray-400 md:inline">Žiniaraštis yra pagrindinis tiesos šaltinis</span>
             <Link href="/supplier-quotes" className="text-xs font-medium text-gray-500 transition-colors hover:text-primary-600">
               Pasiūlymų analizė
             </Link>
@@ -480,12 +480,12 @@ export function BoqImport() {
           {status !== 'idle' && (
             <div className="mb-7 grid gap-6 border-b border-gray-200 pb-7 lg:grid-cols-[1fr_420px] lg:items-end">
               <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-600">Projekto BOQ paruošimas</p>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-600">Projekto žiniaraščio paruošimas</p>
                 <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Darbų žiniaraščio importas</h1>
                 <Text muted className="mt-2 max-w-2xl">Patikrink importuotas pozicijas prieš kurdamas darbų paketus.</Text>
               </div>
               <Stepper
-                steps={[{ label: 'Įkelti BOQ' }, { label: 'Patikrinti pozicijas' }, { label: 'Darbų paketai' }]}
+                steps={[{ label: 'Įkelti žiniaraštį' }, { label: 'Patikrinti pozicijas' }, { label: 'Darbų paketai' }]}
                 currentStep={status === 'review' ? 2 : status === 'ready' ? 3 : 1}
               />
             </div>
@@ -496,7 +496,7 @@ export function BoqImport() {
               <div className="grid items-center gap-10 py-4 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16 lg:py-10">
                 <section>
                   <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3 py-1.5 text-[11px] font-semibold text-primary-700">
-                    <FileCheck2 size={13} aria-hidden /> Patikimas BOQ importas
+                    <FileCheck2 size={13} aria-hidden /> Patikimas žiniaraščio importas
                   </div>
                   <h1 className="max-w-xl text-4xl font-semibold leading-[1.12] tracking-[-0.035em] text-gray-900 sm:text-5xl">
                     Nuo dokumento iki aiškių darbų paketų.
@@ -508,7 +508,7 @@ export function BoqImport() {
                   <div className="mt-8 space-y-4">
                     {[
                       { icon: ScanSearch, title: 'Deterministic patikra', text: 'Pozicijos numeris, pavadinimas, vienetas ir kiekis tikrinami aiškiomis taisyklėmis.' },
-                      { icon: FileSpreadsheet, title: 'Excel, PDF ir OCR', text: 'Skirtingi šaltiniai paverčiami į vienodą vidinį BOQ modelį.' },
+                      { icon: FileSpreadsheet, title: 'Excel, PDF ir OCR', text: 'Skirtingi šaltiniai paverčiami į vienodą darbų pozicijų struktūrą.' },
                       { icon: Layers3, title: 'Kontrolė lieka tau', text: 'Prieš tęsiant matai priimtas bei atmestas eilutes ir pats tvarkai paketus.' },
                     ].map(({ icon: Icon, title, text }) => (
                       <div key={title} className="flex gap-3.5">
@@ -522,13 +522,13 @@ export function BoqImport() {
                 <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg shadow-gray-900/[0.06]">
                   <div className="border-b border-gray-100 bg-gradient-to-r from-primary-50 to-white px-6 py-5 sm:px-8">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-600">1 žingsnis iš 3</p>
-                    <h2 className="mt-1 text-lg font-semibold text-gray-900">Įkelk užsakovo BOQ</h2>
+                    <h2 className="mt-1 text-lg font-semibold text-gray-900">Įkelk užsakovo darbų kiekių žiniaraštį</h2>
                     <p className="mt-1 text-xs text-gray-500">Originalus dokumentas nebus keičiamas.</p>
                   </div>
                   <div className="p-5 sm:p-8">
                     <FileUpload
                       accept=".xlsx,.xls,.pdf"
-                      label="Vilkite BOQ failą čia"
+                      label="Vilkite darbų kiekių žiniaraščio failą čia"
                       hint="arba spauskite ir pasirinkite iš kompiuterio"
                       onFilesSelected={handleFile}
                       className="min-h-[230px] rounded-xl bg-gray-50/70 px-8 py-12 hover:bg-primary-50/50"
@@ -543,7 +543,7 @@ export function BoqImport() {
 
               <div className="mt-8 rounded-xl border border-gray-200 bg-white px-5 py-4 sm:px-7">
                 <Stepper
-                  steps={[{ label: 'Įkelti BOQ' }, { label: 'Patikrinti pozicijas' }, { label: 'Darbų paketai' }]}
+                  steps={[{ label: 'Įkelti žiniaraštį' }, { label: 'Patikrinti pozicijas' }, { label: 'Darbų paketai' }]}
                   currentStep={1}
                   className="mx-auto max-w-2xl"
                 />
@@ -561,7 +561,7 @@ export function BoqImport() {
                     <p className="text-xs text-gray-400">
                       {ocrProgress
                         ? `OCR atpažinimas: ${ocrProgress.page}/${ocrProgress.totalPages} psl. (${ocrProgress.stage === 'render' ? 'ruošiama' : 'atpažįstama'})…`
-                        : 'Ieškoma BOQ pozicijų…'}
+                        : 'Ieškoma darbų pozicijų…'}
                     </p>
                   </div>
                 </div>
@@ -571,7 +571,7 @@ export function BoqImport() {
 
           {status === 'review' && (
             <div className="animate-fade-in space-y-4">
-              <Alert variant="success" title={`Aptikta BOQ pozicijų: ${pendingRows.length.toLocaleString('lt-LT')}`}>
+              <Alert variant="success" title={`Aptikta darbų pozicijų: ${pendingRows.length.toLocaleString('lt-LT')}`}>
                 Importas dar nepatvirtintas. Peržiūrėk priimtas pozicijas ir atmestas dokumento eilutes — darbų paketai
                 bus formuojami tik po tavo patvirtinimo.
               </Alert>
@@ -596,7 +596,7 @@ export function BoqImport() {
 
               {criticalIssueCount > 0 && (
                 <Alert variant="warning" title="Prieš tęsiant reikia pataisyti pažymėtas eilutes">
-                  Dublikuotos BOQ eilutės, tušti laukai ir netinkami kiekiai pažymėti lentelėje. Paketai nebus kuriami, kol liks kritinių klaidų.
+                  Dublikuotos žiniaraščio eilutės, tušti laukai ir netinkami kiekiai pažymėti lentelėje. Paketai nebus kuriami, kol liks kritinių klaidų.
                 </Alert>
               )}
 
@@ -604,7 +604,7 @@ export function BoqImport() {
                 <CardHeader>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <CardTitle className="text-base">BOQ peržiūra ir taisymas</CardTitle>
+                      <CardTitle className="text-base">Žiniaraščio peržiūra ir taisymas</CardTitle>
                       <CardDescription className="mt-1">Spustelėk lauką ir pataisyk parserio rezultatą. Pakeitimai bus naudojami darbų paketams.</CardDescription>
                     </div>
                     {removedRows.length > 0 && (
@@ -699,7 +699,7 @@ export function BoqImport() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">Neįtrauktos {excludedLines.length.toLocaleString('lt-LT')} dokumento eilutės</CardTitle>
-                    <CardDescription>Šios eilutės neturėjo visų reikalingų BOQ lauko reikšmių, todėl nebuvo importuotos.</CardDescription>
+                    <CardDescription>Šios eilutės neturėjo visų reikalingų darbų pozicijos laukų, todėl nebuvo importuotos.</CardDescription>
                   </CardHeader>
                   <CardContent className="!p-0">
                     <div className="max-h-80 divide-y divide-gray-100 overflow-y-auto">
