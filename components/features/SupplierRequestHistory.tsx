@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CalendarClock, Mail, Send, UsersRound } from 'lucide-react';
+import { CalendarClock, Check, Copy, Mail, Send, UsersRound } from 'lucide-react';
 
 import { Alert, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from '@/components/ui';
 import { listProjectSupplierRequests, updateRecipientStatus } from '@/lib/rfq/repository';
@@ -38,6 +38,7 @@ export function SupplierRequestHistory({ projectId, refreshKey }: SupplierReques
   const [requests, setRequests] = useState<StoredSupplierRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [changingRecipientId, setChangingRecipientId] = useState<string | null>(null);
+  const [copiedRecipientId, setCopiedRecipientId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -83,10 +84,33 @@ export function SupplierRequestHistory({ projectId, refreshKey }: SupplierReques
     }
   };
 
-  const openEmail = (request: StoredSupplierRequest, recipient: SupplierRequestRecipient) => {
+  const emailContent = (request: StoredSupplierRequest, recipient: SupplierRequestRecipient) => {
     const greetingName = recipient.contact_name || recipient.supplier_name;
     const body = personalizeSupplierEmail(request.body, greetingName);
-    window.location.href = `mailto:${encodeURIComponent(recipient.email)}?subject=${encodeURIComponent(request.subject)}&body=${encodeURIComponent(body)}`;
+    return { body, subject: request.subject };
+  };
+
+  const gmailUrl = (request: StoredSupplierRequest, recipient: SupplierRequestRecipient): string => {
+    const { body, subject } = emailContent(request, recipient);
+    const params = new URLSearchParams({
+      view: 'cm',
+      fs: '1',
+      to: recipient.email,
+      su: subject,
+      body,
+    });
+    return `https://mail.google.com/mail/?${params.toString()}`;
+  };
+
+  const copyEmail = async (request: StoredSupplierRequest, recipient: SupplierRequestRecipient) => {
+    const { body, subject } = emailContent(request, recipient);
+    try {
+      await navigator.clipboard.writeText(`Kam: ${recipient.email}\nTema: ${subject}\n\n${body}`);
+      setCopiedRecipientId(recipient.id);
+      window.setTimeout(() => setCopiedRecipientId((current) => (current === recipient.id ? null : current)), 2500);
+    } catch {
+      setError('Nepavyko nukopijuoti laiško. Atidarykite Gmail ir nukopijuokite tekstą rankiniu būdu.');
+    }
   };
 
   return (
@@ -152,9 +176,23 @@ export function SupplierRequestHistory({ projectId, refreshKey }: SupplierReques
                           <option value="sent">Išsiųsta</option>
                           <option value="answered">Atsakyta</option>
                         </select>
-                        <Button variant="secondary" size="sm" onClick={() => openEmail(request, recipient)}>
-                          <Mail size={14} aria-hidden /> Atidaryti laišką
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyEmail(request, recipient)}
+                          aria-label={`Kopijuoti laišką tiekėjui ${recipient.supplier_name}`}
+                        >
+                          {copiedRecipientId === recipient.id ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
+                          {copiedRecipientId === recipient.id ? 'Nukopijuota' : 'Kopijuoti'}
                         </Button>
+                        <a
+                          href={gmailUrl(request, recipient)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 focus-visible:ring-offset-1"
+                        >
+                          <Mail size={14} aria-hidden /> Atidaryti Gmail
+                        </a>
                       </div>
                     </div>
                   );
