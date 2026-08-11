@@ -396,7 +396,7 @@ export function extractBoqTable(pagesTokens: PositionedToken[][], rowTolerance =
       .map((value) => String(value ?? '').trim().toLocaleLowerCase('lt-LT'))
       .join('|');
     if (seenRows.has(key)) {
-      excluded.push({ raw: `${row.positionNumber ?? ''} ${row.name}`, reason: 'Pasikartojanti žiniaraščio eilutė' });
+      excluded.push({ raw: `${row.positionNumber ?? ''} ${row.name}`, reason: 'Pasikartojanti sąmatos eilutė' });
       continue;
     }
     seenRows.add(key);
