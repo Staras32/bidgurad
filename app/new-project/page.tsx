@@ -5,5 +5,6 @@ export const metadata: Metadata = {
   title: 'Sąmatos importas',
   description: 'Importuokite Excel arba PDF statybos sąmatą, patikrinkite pozicijas ir parenkite darbų apimtį tiekėjams.',
   alternates: { canonical: '/new-project' },
+  robots: { index: true, follow: true },
 };
 export default function NewProjectPage() { return <BoqImport />; }

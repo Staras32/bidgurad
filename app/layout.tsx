@@ -44,6 +44,17 @@ export const metadata: Metadata = {
     title: 'BidGuard – statybos sąmatų ir tiekėjų pasiūlymų valdymas',
     description: 'Nuo Excel ar PDF sąmatos iki kontroliuojamos tiekėjo užklausos ir palyginto pasiūlymo.',
   },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -19,6 +19,7 @@ export const metadata: Metadata = {
   description:
     'Importuokite statybos sąmatą, parenkite darbų apimtį tiekėjams ir palyginkite gautus pasiūlymus vienoje BidGuard darbo erdvėje.',
   alternates: { canonical: '/' },
+  robots: { index: true, follow: true },
 };
 
 const primaryLink = 'inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-primary-600 bg-primary-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:border-primary-700 hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40 focus-visible:ring-offset-2';
