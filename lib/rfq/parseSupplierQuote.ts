@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { parseEuNumber } from '@/lib/numberParser';
 import type { SupplierQuoteComparison, SupplierQuoteRow, SupplierRequestItem } from './types';
+import { fileSizeLimitMessage, MAX_PDF_PAGES, MAX_SUPPLIER_QUOTE_FILE_BYTES } from '@/lib/fileLimits';
 
 type SheetRow = unknown[];
 
@@ -71,9 +72,18 @@ async function parseExcel(file: File): Promise<SupplierQuoteRow[]> {
 }
 
 async function parsePdf(file: File): Promise<SupplierQuoteRow[]> {
-  const pdfjs = await import('pdfjs-dist');
-  pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-  const document = await pdfjs.getDocument({ data: await file.arrayBuffer(), wasmUrl: '/pdfjs/wasm/' }).promise;
+  const pdfjs = typeof window === 'undefined'
+    ? await import('pdfjs-dist/legacy/build/pdf.mjs')
+    : await import('pdfjs-dist');
+  if (typeof window !== 'undefined') pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+  const documentOptions = typeof window === 'undefined'
+    ? { data: await file.arrayBuffer() }
+    : { data: await file.arrayBuffer(), wasmUrl: '/pdfjs/wasm/' };
+  const document = await pdfjs.getDocument(documentOptions).promise;
+  if (document.numPages > MAX_PDF_PAGES) {
+    document.cleanup();
+    throw new Error(`PDF turi per daug puslapių. Leidžiama iki ${MAX_PDF_PAGES} puslapių.`);
+  }
   type Token = { value: string; x: number; x2: number; y: number };
   const pages: Token[][] = [];
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
@@ -178,6 +188,9 @@ async function parsePdf(file: File): Promise<SupplierQuoteRow[]> {
 }
 
 export async function parseSupplierQuoteFile(file: File): Promise<{ fileType: 'xlsx' | 'pdf'; rows: SupplierQuoteRow[] }> {
+  if (file.size > MAX_SUPPLIER_QUOTE_FILE_BYTES) {
+    throw new Error(fileSizeLimitMessage(MAX_SUPPLIER_QUOTE_FILE_BYTES));
+  }
   const extension = file.name.split('.').pop()?.toLowerCase();
   if (extension === 'xlsx' || extension === 'xls') return { fileType: 'xlsx', rows: await parseExcel(file) };
   if (extension === 'pdf') return { fileType: 'pdf', rows: await parsePdf(file) };

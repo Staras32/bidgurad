@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { uid } from '@/lib/uid';
+import { fileSizeLimitMessage, MAX_BOQ_FILE_BYTES, MAX_PDF_PAGES } from '@/lib/fileLimits';
 import type { BoqFileType, BoqParseResult, BoqRow, ExcludedBoqLine } from './types';
 import { extractBoqTable, type PositionedToken } from './reconstructTable';
 import { classifyBoqCandidate } from './boqRowRules';
@@ -291,11 +292,23 @@ async function parsePdf(file: File, onOcrProgress?: (progress: OcrProgress) => v
   let totalChars = 0;
 
   try {
-    const pdfjsLib = await import('pdfjs-dist');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+    const pdfjsLib = typeof window === 'undefined'
+      ? await import('pdfjs-dist/legacy/build/pdf.mjs')
+      : await import('pdfjs-dist');
+    if (typeof window !== 'undefined') pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
     const buffer = await file.arrayBuffer();
-    const doc = await pdfjsLib.getDocument({ data: buffer, ...PDFJS_DOCUMENT_OPTIONS }).promise;
+    const documentOptions = typeof window === 'undefined'
+      ? { data: buffer }
+      : { data: buffer, ...PDFJS_DOCUMENT_OPTIONS };
+    const doc = await pdfjsLib.getDocument(documentOptions).promise;
+    if (doc.numPages > MAX_PDF_PAGES) {
+      doc.cleanup();
+      return {
+        fileType: 'pdf', rows: [], excluded: [], headerFound: false,
+        error: `PDF turi per daug puslapių. Leidžiama iki ${MAX_PDF_PAGES} puslapių.`,
+      };
+    }
 
     for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
       const page = await doc.getPage(pageNum);
@@ -411,6 +424,10 @@ function extensionOf(name: string): string {
 
 export async function parseBoqFile(file: File, onOcrProgress?: (progress: OcrProgress) => void): Promise<BoqParseResult> {
   const ext = extensionOf(file.name);
+  if (file.size > MAX_BOQ_FILE_BYTES) {
+    const fileType: BoqFileType = ext === 'xlsx' || ext === 'xls' ? 'xlsx' : ext === 'pdf' ? 'pdf' : 'unknown';
+    return { fileType, rows: [], excluded: [], headerFound: false, error: fileSizeLimitMessage(MAX_BOQ_FILE_BYTES) };
+  }
   if (ext === 'xlsx' || ext === 'xls') return parseXlsx(file);
   if (ext === 'pdf') return parsePdf(file, onOcrProgress);
   const fileType: BoqFileType = 'unknown';

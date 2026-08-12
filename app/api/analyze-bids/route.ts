@@ -1,4 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  checkUserRateLimit,
+  rejectCrossSiteRequest,
+  requireAuthenticatedUser,
+} from '@/lib/security/requestLimits';
+
+const MAX_REQUEST_BYTES = 256 * 1024;
+const MAX_BIDS = 10;
+const MAX_ITEMS_PER_BID = 2_000;
+
+function isSafeBids(value: unknown): value is unknown[] {
+  if (!Array.isArray(value) || value.length < 2 || value.length > MAX_BIDS) return false;
+  return value.every((bid) => {
+    if (!bid || typeof bid !== 'object') return false;
+    const candidate = bid as Record<string, unknown>;
+    if (typeof candidate.bidId !== 'string' || candidate.bidId.length > 100) return false;
+    if (typeof candidate.subrangovas !== 'string' || candidate.subrangovas.length > 200) return false;
+    if (typeof candidate.israsymai_ir_kvalifikacijos !== 'string' || candidate.israsymai_ir_kvalifikacijos.length > 10_000) return false;
+    if (!Array.isArray(candidate.eilutes) || candidate.eilutes.length > MAX_ITEMS_PER_BID) return false;
+    return candidate.eilutes.every((item) => {
+      if (!item || typeof item !== 'object') return false;
+      const row = item as Record<string, unknown>;
+      return typeof row.aprasymas === 'string' && row.aprasymas.length <= 1_000
+        && typeof row.kaina === 'number' && Number.isFinite(row.kaina) && row.kaina >= 0;
+    });
+  });
+}
 
 // Promptas ir API raktas gyvena TIK čia – frontend (components/BidGuard.tsx)
 // jų niekada nemato ir negali pavogti per naršyklės tinklo skirtuką.
@@ -31,16 +58,33 @@ Atsakyk TIK grynu JSON, be markdown, be paaiškinimų, tiksliai tokia forma:
 }
 
 export async function POST(req: NextRequest) {
+  const crossSiteResponse = rejectCrossSiteRequest(req);
+  if (crossSiteResponse) return crossSiteResponse;
+
+  const contentLength = Number(req.headers.get('content-length') ?? 0);
+  if (contentLength > MAX_REQUEST_BYTES) {
+    return NextResponse.json({ error: 'Analizės duomenų apimtis per didelė.' }, { status: 413 });
+  }
+
+  const user = await requireAuthenticatedUser();
+  if (user instanceof NextResponse) return user;
+  const rateLimitResponse = checkUserRateLimit(user.id);
+  if (rateLimitResponse) return rateLimitResponse;
+
   let body: { bids?: unknown };
   try {
-    body = await req.json();
+    const rawBody = await req.text();
+    if (new TextEncoder().encode(rawBody).byteLength > MAX_REQUEST_BYTES) {
+      return NextResponse.json({ error: 'Analizės duomenų apimtis per didelė.' }, { status: 413 });
+    }
+    body = JSON.parse(rawBody) as { bids?: unknown };
   } catch {
     return NextResponse.json({ error: 'Neteisingas užklausos formatas.' }, { status: 400 });
   }
 
   const bids = body?.bids;
-  if (!Array.isArray(bids) || bids.length < 2) {
-    return NextResponse.json({ error: 'Reikia bent 2 pasiūlymų.' }, { status: 400 });
+  if (!isSafeBids(bids)) {
+    return NextResponse.json({ error: 'Pasiūlymų duomenys netinkami arba per dideli.' }, { status: 400 });
   }
 
   if (!process.env.DEEPSEEK_API_KEY) {
@@ -63,11 +107,11 @@ export async function POST(req: NextRequest) {
         messages: [{ role: 'user', content: buildPrompt(bids) }],
         response_format: { type: 'json_object' },
       }),
+      signal: AbortSignal.timeout(45_000),
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      console.error('DeepSeek API klaida:', errText);
+      console.error('DeepSeek API klaida:', response.status);
       return NextResponse.json(
         { error: 'AI analizės paslauga laikinai nepasiekiama.' },
         { status: 502 }
