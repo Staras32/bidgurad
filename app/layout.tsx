@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { Inter } from 'next/font/google';
-import Script from 'next/script';
+import { PrivacyAnalytics } from '@/components/PrivacyAnalytics';
 import './globals.css';
 
 const inter = Inter({
@@ -63,7 +63,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="lt" className={inter.variable}>
       <body className="font-sans text-gray-900 bg-background antialiased">
         {children}
-        <Script src="/_vercel/insights/script.js" strategy="afterInteractive" />
+        <PrivacyAnalytics />
       </body>
     </html>
   );
