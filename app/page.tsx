@@ -148,7 +148,7 @@ export default function Home() {
                 <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
                   <div className="flex items-center gap-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary-600"><FileSpreadsheet size={18} aria-hidden /></span>
-                    <div><p className="text-sm font-semibold text-gray-900">Sembos gatvės remontas</p><p className="text-xs text-gray-500">Sąmatos darbų apimtis</p></div>
+                    <div><p className="text-sm font-semibold text-gray-900">Miesto gatvės kapitalinis remontas</p><p className="text-xs text-gray-500">Sąmatos darbų apimtis</p></div>
                   </div>
                   <Badge variant="success">Paruošta</Badge>
                 </div>
