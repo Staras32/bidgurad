@@ -4,7 +4,7 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: '*',
-      allow: ['/', '/new-project'],
+      allow: ['/', '/new-project', '/privacy', '/terms'],
       disallow: ['/auth', '/auth/', '/projects', '/projects/', '/supplier-quotes', '/supplier-quotes/', '/api/'],
     },
     sitemap: 'https://www.bidguard.eu/sitemap.xml',

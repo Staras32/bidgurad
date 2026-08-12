@@ -10,6 +10,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(projectUrl);
   }
 
+  // The homepage is public and must remain crawlable. Only the legacy
+  // `?project=` link above needs middleware handling on this route.
+  if (request.nextUrl.pathname === '/') {
+    return NextResponse.next();
+  }
+
   const config = getSupabasePublicConfig();
   if (!config) return NextResponse.next();
 

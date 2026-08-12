@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 
 import { Badge, Card, CardContent } from '@/components/ui';
+import { SiteFooter } from '@/components/SiteFooter';
 
 export const metadata: Metadata = {
   title: 'Statybos sąmatų ir tiekėjų pasiūlymų valdymas',
@@ -240,12 +241,7 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="border-t border-gray-200 bg-gray-50">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-8 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <div className="flex items-center gap-2"><ShieldCheck size={15} className="text-primary-600" /><span className="font-semibold text-gray-700">BidGuard</span><span>Statybos sąmatų ir tiekėjų pasiūlymų kontrolė</span></div>
-          <div className="flex gap-5"><Link href="/new-project" className="hover:text-gray-900">Sąmatos importas</Link><Link href="/auth" className="hover:text-gray-900">Prisijungti</Link></div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
