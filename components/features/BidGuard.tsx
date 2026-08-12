@@ -83,9 +83,9 @@ const SAMPLE: Bid[] = [
     exclusions:
       'Neįtraukta: laikinas elektros tiekimas statybos metu, leidimų gavimas, darbas savaitgaliais be papildomo susitarimo.',
     items: [
-      { id: uid(), desc: 'Elektros instaliacija, gyvenamosios patalpos', price: '18400' },
-      { id: uid(), desc: 'Skydinės montavimas ir prijungimas', price: '3200' },
-      { id: uid(), desc: 'Apšvietimo prietaisų montavimas', price: '2100' },
+      { id: uid(), desc: 'Elektros instaliacija, gyvenamosios patalpos', price: '180000' },
+      { id: uid(), desc: 'Skydinės montavimas ir prijungimas', price: '42000' },
+      { id: uid(), desc: 'Apšvietimo prietaisų montavimas', price: '26400' },
     ],
   },
   {
@@ -93,9 +93,9 @@ const SAMPLE: Bid[] = [
     name: 'MB Voltas Baltic',
     exclusions: 'Apimtis gali keistis pagal faktinę situaciją objekte. Kaina preliminari.',
     items: [
-      { id: uid(), desc: 'Pilna elektros instaliacija namui', price: '9800' },
-      { id: uid(), desc: 'Skydas + prijungimas', price: '3100' },
-      { id: uid(), desc: 'Šviestuvų montavimas', price: '1950' },
+      { id: uid(), desc: 'Pilna elektros instaliacija namui', price: '175000' },
+      { id: uid(), desc: 'Skydas + prijungimas', price: '40000' },
+      { id: uid(), desc: 'Šviestuvų montavimas', price: '25650' },
     ],
   },
   {
@@ -103,13 +103,62 @@ const SAMPLE: Bid[] = [
     name: 'UAB Srovė ir Ko',
     exclusions: 'Neįtraukta: leidimų derinimas su tinklų operatoriumi, medžiagos virš standartinės komplektacijos.',
     items: [
-      { id: uid(), desc: 'El. instaliacijos darbai (visos patalpos)', price: '19200' },
-      { id: uid(), desc: 'Elektros skydo įrengimas', price: '3400' },
-      { id: uid(), desc: 'Apšvietimo sistema', price: '2300' },
-      { id: uid(), desc: 'Laikinas statybinis elektros tiekimas', price: '1100' },
+      { id: uid(), desc: 'El. instaliacijos darbai (visos patalpos)', price: '182000' },
+      { id: uid(), desc: 'Elektros skydo įrengimas', price: '43000' },
+      { id: uid(), desc: 'Apšvietimo sistema', price: '28700' },
+      { id: uid(), desc: 'Laikinas statybinis elektros tiekimas', price: '6000' },
     ],
   },
 ];
+
+function createSampleAnalysis(): Analysis {
+  const [supplierA, supplierB, supplierC] = SAMPLE;
+  const categories = [
+    'Darbų zonos paruošimas',
+    'Trasos nužymėjimas',
+    'Grunto kasimas',
+    'Smėlio pagrindo įrengimas',
+    'Skaldos sluoksnio įrengimas',
+    'Vamzdyno klojimas',
+    'Vamzdyno bandymai',
+    'Šulinių montavimas',
+    'Elektros kabelių klojimas',
+    'Valdymo spintos montavimas',
+    'Asfalto dangos įrengimas',
+    'Bortų įrengimas',
+    'Teritorijos sutvarkymas',
+    'Dokumentacijos parengimas',
+  ];
+
+  return {
+    scopeMatrix: categories.map((kategorija, index) => ({
+      kategorija,
+      eilutes: [
+        { bidId: supplierA.id, yra: true, kaina: null, originalus_aprasymas: kategorija },
+        {
+          bidId: supplierB.id,
+          yra: index !== 6,
+          kaina: null,
+          originalus_aprasymas: index === 6 ? null : kategorija,
+        },
+        { bidId: supplierC.id, yra: true, kaina: null, originalus_aprasymas: kategorija },
+      ],
+    })),
+    bidScores: [
+      { bidId: supplierA.id, balas: 86, pagrindimas: 'Pilniausia darbų apimtis ir aiškiausios komercinės sąlygos. Kaina nėra mažiausia, tačiau pasiūlyme aptikta mažiausiai neapibrėžtumo.' },
+      { bidId: supplierB.id, balas: 48, pagrindimas: 'Mažiausia kaina, tačiau trūksta dalies apimties ir pasiūlyme paliktos preliminarios kainodaros sąlygos.' },
+      { bidId: supplierC.id, balas: 72, pagrindimas: 'Apimtis pilna, tačiau keli įkainiai reikšmingai skiriasi nuo kitų pasiūlymų ir turėtų būti patikslinti.' },
+    ],
+    flags: [
+      { bidId: supplierB.id, tipas: 'scope_gap', sunkumas: 'high', aprasymas: 'Pasiūlyme nerasta vamzdyno bandymų ir rezultatų įforminimo apimtis.' },
+      { bidId: supplierB.id, tipas: 'risky_language', sunkumas: 'high', aprasymas: 'Nurodyta, kad galutinė kaina gali keistis pagal faktinę situaciją objekte.' },
+      { bidId: supplierC.id, tipas: 'price_outlier', sunkumas: 'medium', aprasymas: 'Asfalto dangos įkainis apie 22 % didesnis už kitų tiekėjų pasiūlymus.' },
+      { bidId: supplierB.id, tipas: 'unique_exclusion', sunkumas: 'medium', aprasymas: 'Leidimų ir derinimo darbai išskirti iš bendros pasiūlymo kainos.' },
+      { bidId: supplierA.id, tipas: 'unique_exclusion', sunkumas: 'low', aprasymas: 'Darbas savaitgaliais galimas tik pagal atskirą susitarimą.' },
+    ],
+    santrauka: 'UAB Elektromontas rekomenduojamas dėl pilnos apimties ir aiškiausių sąlygų. MB Voltas Baltic pateikė mažiausią kainą, tačiau prieš sprendimą būtina patikslinti trūkstamą apimtį ir preliminarios kainos sąlygą.',
+  };
+}
 
 function riskTier(score: number): { label: string; variant: BadgeVariant; tileClassName: string; barClassName: string; Icon: typeof ShieldCheck } {
   if (score >= 75) {
@@ -292,6 +341,7 @@ export default function BidGuard() {
   const [savedNotice, setSavedNotice] = useState(false);
   const [flagFeedback, setFlagFeedback] = useState<FlagFeedback>({});
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const [isSamplePreview, setIsSamplePreview] = useState(false);
 
   // ---------- Pasiūlymų / eilučių valdymas ----------
 
@@ -299,12 +349,16 @@ export default function BidGuard() {
   const removeBid = (id: string) => setBids((b) => (b.length > 2 ? b.filter((x) => x.id !== id) : b));
   const loadSample = () => {
     setBids(SAMPLE);
-    setAnalysis(null);
+    setAnalysis(createSampleAnalysis());
+    setIsSamplePreview(true);
     setError('');
+    setFlagFeedback({});
+    setTimeout(() => document.getElementById('comparison-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   };
   const resetAll = () => {
     setBids([emptyBid(), emptyBid()]);
     setAnalysis(null);
+    setIsSamplePreview(false);
     setError('');
   };
 
@@ -446,6 +500,7 @@ export default function BidGuard() {
   const canAnalyze =
     bids.length >= 2 &&
     bids.every((b) => b.name.trim() && b.items.some((i) => i.desc.trim() && Number(i.price) > 0)) &&
+    !isSamplePreview &&
     !loading;
 
   const runAnalysis = async () => {
@@ -539,7 +594,7 @@ export default function BidGuard() {
   };
 
   const handleExportExcel = () => {
-    if (!analysis) return;
+    if (!analysis || isSamplePreview) return;
     const rows = bids.map((b) => {
       const score = analysis.bidScores.find((s) => s.bidId === b.id);
       const cov = coverageForBid(b.id);
@@ -560,9 +615,12 @@ export default function BidGuard() {
     XLSX.writeFile(wb, `bidguard-palyginimas-${Date.now()}.xlsx`);
   };
 
-  const handleGeneratePdf = () => window.print();
+  const handleGeneratePdf = () => {
+    if (!isSamplePreview) window.print();
+  };
 
   const handleGenerateClarificationEmail = (bidId: string) => {
+    if (isSamplePreview) return;
     const bid = bids.find((b) => b.id === bidId);
     if (!bid || !analysis) return;
     const bidFlags = analysis.flags.filter((f) => f.bidId === bidId);
@@ -678,7 +736,7 @@ export default function BidGuard() {
   };
 
   const saveCurrentProject = () => {
-    if (!analysis) return;
+    if (!analysis || isSamplePreview) return;
     setSavingProject(true);
     try {
       const project: SavedProject = {
@@ -793,14 +851,23 @@ export default function BidGuard() {
           <>
             <div className="flex flex-wrap items-center gap-3 print:hidden">
               <Button variant="secondary" size="sm" onClick={loadSample}>
-                <Sparkles size={14} /> Įkelti pavyzdį
+                <Sparkles size={14} /> Peržiūrėti pavyzdinį palyginimą
               </Button>
               <Button variant="ghost" size="sm" onClick={resetAll}>
                 Išvalyti
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 print:hidden">
+            {isSamplePreview && (
+              <Alert variant="info" title="Pavyzdinis palyginimas · duomenys netikri">
+                <span className="flex flex-wrap items-center justify-between gap-3">
+                  <span>Ši peržiūra skirta tik parodyti, kaip atrodys rezultatai. Jos negalima išsaugoti, siųsti ar eksportuoti.</span>
+                  <Button variant="secondary" size="sm" onClick={resetAll}>Pradėti su savo duomenimis</Button>
+                </span>
+              </Alert>
+            )}
+
+            <div className={cn('grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 print:hidden', isSamplePreview && 'hidden')}>
               {bids.map((bid, idx) => (
                 <Card key={bid.id} className="flex flex-col">
                   <CardContent className="flex flex-1 flex-col">
@@ -988,11 +1055,13 @@ export default function BidGuard() {
             </div>
 
             <div className="flex items-center gap-4 pt-2 print:hidden">
-              <Button variant="primary" size="lg" onClick={runAnalysis} disabled={!canAnalyze} isLoading={loading}>
-                {!loading && <ShieldAlert size={20} />}
-                {loading ? 'Analizuojama...' : 'Analizuoti riziką'}
-              </Button>
-              {!canAnalyze && !loading && (
+              {!isSamplePreview && (
+                <Button variant="primary" size="lg" onClick={runAnalysis} disabled={!canAnalyze} isLoading={loading}>
+                  {!loading && <ShieldAlert size={20} />}
+                  {loading ? 'Analizuojama...' : 'Analizuoti riziką'}
+                </Button>
+              )}
+              {!canAnalyze && !loading && !isSamplePreview && (
                 <Text size="small" muted>
                   Užpildyk bent 2 pasiūlymus (pavadinimą + bent po vieną eilutę su kaina).
                 </Text>
@@ -1002,7 +1071,7 @@ export default function BidGuard() {
             {error && <Alert variant="error">{error}</Alert>}
 
             {analysis && (
-              <div className="space-y-8 border-t border-gray-100 pt-8">
+              <div id="comparison-results" className="scroll-mt-6 space-y-8 border-t border-gray-100 pt-8">
                 <div>
                   <div className="mb-4">
                     <Heading level={2}>Sprendimo santrauka</Heading>
@@ -1117,27 +1186,29 @@ export default function BidGuard() {
                   </div>
                 )}
 
-                <Card className="print:hidden">
-                  <CardContent className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">Išsaugoti palyginimą</p>
-                      <p className="mt-1 max-w-lg text-xs leading-5 text-gray-500">
-                        Suteik objektui aiškų pavadinimą, kad komanda vėliau lengvai rastų šį sprendimą.
-                      </p>
-                    </div>
-                    <div className="flex w-full items-center gap-2 sm:w-auto">
-                      <Input
-                        className="min-w-0 flex-1 sm:w-56"
-                        placeholder="Objekto pavadinimas"
-                        value={projectLabel}
-                        onChange={(e) => setProjectLabel(e.target.value)}
-                      />
-                      <Button variant="primary" size="sm" onClick={saveCurrentProject} isLoading={savingProject} className="whitespace-nowrap">
-                        {savedNotice ? 'Išsaugota ✓' : 'Išsaugoti projektą'}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                {!isSamplePreview && (
+                  <Card className="print:hidden">
+                    <CardContent className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">Išsaugoti palyginimą</p>
+                        <p className="mt-1 max-w-lg text-xs leading-5 text-gray-500">
+                          Suteik objektui aiškų pavadinimą, kad komanda vėliau lengvai rastų šį sprendimą.
+                        </p>
+                      </div>
+                      <div className="flex w-full items-center gap-2 sm:w-auto">
+                        <Input
+                          className="min-w-0 flex-1 sm:w-56"
+                          placeholder="Objekto pavadinimas"
+                          value={projectLabel}
+                          onChange={(e) => setProjectLabel(e.target.value)}
+                        />
+                        <Button variant="primary" size="sm" onClick={saveCurrentProject} isLoading={savingProject} className="whitespace-nowrap">
+                          {savedNotice ? 'Išsaugota ✓' : 'Išsaugoti projektą'}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 <div>
                   <div className="mb-4">
@@ -1221,17 +1292,23 @@ export default function BidGuard() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-6 print:hidden">
-                  {recommended && (
+                  {recommended && !isSamplePreview && (
                     <Button variant="primary" onClick={() => handleGenerateClarificationEmail(recommended.bid.id)}>
                       <Mail size={15} /> Paruošti patikslinimo laišką
                     </Button>
                   )}
-                  <Button variant="secondary" onClick={handleGeneratePdf}>
-                    <Printer size={15} /> Generuoti palyginimo PDF
-                  </Button>
-                  <Button variant="secondary" onClick={handleExportExcel}>
-                    <Download size={15} /> Eksportuoti į Excel
-                  </Button>
+                  {isSamplePreview ? (
+                    <Button variant="primary" onClick={resetAll}>Pradėti palyginimą su savo pasiūlymais</Button>
+                  ) : (
+                    <>
+                      <Button variant="secondary" onClick={handleGeneratePdf}>
+                        <Printer size={15} /> Generuoti palyginimo PDF
+                      </Button>
+                      <Button variant="secondary" onClick={handleExportExcel}>
+                        <Download size={15} /> Eksportuoti į Excel
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -1351,9 +1428,13 @@ export default function BidGuard() {
             <ModalBody className="max-h-[55vh] overflow-y-auto">{renderDetailTabContent()}</ModalBody>
 
             <ModalFooter>
-              <Button variant="primary" onClick={() => handleGenerateClarificationEmail(selectedBid.id)}>
-                <Mail size={15} /> Generuoti patikslinimo laišką
-              </Button>
+              {isSamplePreview ? (
+                <Text size="small" muted>Pavyzdžio laiško siųsti negalima.</Text>
+              ) : (
+                <Button variant="primary" onClick={() => handleGenerateClarificationEmail(selectedBid.id)}>
+                  <Mail size={15} /> Generuoti patikslinimo laišką
+                </Button>
+              )}
             </ModalFooter>
           </>
         )}
