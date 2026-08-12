@@ -6,6 +6,12 @@ import * as XLSX from 'xlsx';
 import {
   ArrowLeft,
   ArrowRight,
+  Building2,
+  CheckCircle2,
+  ChevronDown,
+  FileSpreadsheet,
+  FolderOpen,
+  Layers3,
   Plus,
   Trash2,
   AlertTriangle,
@@ -23,6 +29,7 @@ import {
   ShieldAlert,
   Sparkles,
   TrendingUp,
+  UploadCloud,
 } from 'lucide-react';
 
 import {
@@ -42,6 +49,7 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
+  Stepper,
   Table,
   TableBody,
   TableCell,
@@ -342,6 +350,7 @@ export default function BidGuard() {
   const [flagFeedback, setFlagFeedback] = useState<FlagFeedback>({});
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const [isSamplePreview, setIsSamplePreview] = useState(false);
+  const [uploadedFileNames, setUploadedFileNames] = useState<Record<string, string>>({});
 
   // ---------- Pasiūlymų / eilučių valdymas ----------
 
@@ -359,6 +368,16 @@ export default function BidGuard() {
     setBids([emptyBid(), emptyBid()]);
     setAnalysis(null);
     setIsSamplePreview(false);
+    setUploadedFileNames({});
+    setError('');
+  };
+  const returnToInputs = () => {
+    if (isSamplePreview) {
+      resetAll();
+      return;
+    }
+    setAnalysis(null);
+    setSelectedBidId(null);
     setError('');
   };
 
@@ -442,6 +461,7 @@ export default function BidGuard() {
 
   const handleFileUpload = (bidId: string, file?: File) => {
     if (!file) return;
+    setUploadedFileNames((current) => ({ ...current, [bidId]: file.name }));
     const isCsv = /\.csv$/i.test(file.name);
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -502,6 +522,10 @@ export default function BidGuard() {
     bids.every((b) => b.name.trim() && b.items.some((i) => i.desc.trim() && Number(i.price) > 0)) &&
     !isSamplePreview &&
     !loading;
+  const readyBidCount = bids.filter(
+    (bid) => bid.name.trim() && bid.items.some((item) => item.desc.trim() && Number(item.price) > 0)
+  ).length;
+  const comparisonStep = analysis ? 3 : readyBidCount >= 2 ? 2 : 1;
 
   const runAnalysis = async () => {
     setLoading(true);
@@ -795,40 +819,35 @@ export default function BidGuard() {
   // ---------- UI ----------
 
   return (
-    <div className="min-h-screen w-full bg-background pb-24">
-      <header className="border-b border-gray-100 bg-white">
-        <div className="mx-auto max-w-5xl px-5 py-10 sm:px-10">
-          <div className="mb-7 flex flex-wrap items-center justify-between gap-3 print:hidden">
-            <Link
-              href="/new-project"
-              className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
-            >
-              <ArrowLeft size={16} aria-hidden /> Grįžti į sąmatą
+    <div className="min-h-screen w-full bg-gray-50 pb-24">
+      <header className="border-b border-gray-200/80 bg-white/95 backdrop-blur print:hidden">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
+          <Link href="/" className="flex items-center gap-2.5 text-gray-900">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white shadow-sm">
+              <ShieldCheck size={18} aria-hidden />
+            </span>
+            <span className="text-base font-semibold tracking-tight">BidGuard</span>
+            <span className="hidden rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-500 sm:inline">
+              Pasiūlymų valdymas
+            </span>
+          </Link>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Link href="/new-project" className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 transition-colors hover:text-gray-900">
+              <ArrowLeft size={14} aria-hidden /> <span className="hidden sm:inline">Grįžti į sąmatą</span><span className="sm:hidden">Grįžti</span>
             </Link>
-            <Link
-              href="/projects"
-              className="text-sm font-medium text-gray-500 transition-colors hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
-            >
-              Mano projektai
+            <Link href="/projects" className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50">
+              <FolderOpen size={14} aria-hidden /> <span className="hidden sm:inline">Mano projektai</span><span className="sm:hidden">Projektai</span>
             </Link>
           </div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-primary-600">
-            Rizikos auditas · Subrangovų pasiūlymai
-          </p>
-          <Heading level={1}>Kuris rangovas pigus tik popieriuje?</Heading>
-          <Text muted className="mt-3 max-w-xl">
-            Įkelk pasiūlymus. Po 30 sekundžių žinosi, kurį rinktis — ir ko tavo komanda pati nepastebėtų, kol
-            nebūtų per vėlu.
-          </Text>
         </div>
       </header>
 
-      <nav className="border-b border-gray-200 bg-white print:hidden">
-        <div className="mx-auto flex max-w-5xl gap-1 px-5 sm:px-10">
+      <nav className="border-b border-gray-200 bg-white print:hidden" aria-label="Pasiūlymų darbo erdvė">
+        <div className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-5 sm:px-8">
           {([
-            { key: 'analyze', label: 'Nauja analizė' },
-            { key: 'projects', label: 'Projektai', action: openProjects },
-            { key: 'contractors', label: 'Rangovų istorija', action: openContractors },
+            { key: 'analyze', label: 'Pasiūlymų palyginimas' },
+            { key: 'projects', label: 'Išsaugoti palyginimai', action: openProjects },
+            { key: 'contractors', label: 'Rangovų suvestinė', action: openContractors },
           ] as { key: ViewMode; label: string; action?: () => void }[]).map((t) => (
             <button
               key={t.key}
@@ -846,17 +865,76 @@ export default function BidGuard() {
         </div>
       </nav>
 
-      <main className="mx-auto max-w-5xl space-y-6 px-5 pt-8 sm:px-10">
+      <main className="mx-auto max-w-7xl space-y-6 px-5 pt-8 sm:px-8 sm:pt-10">
         {view === 'analyze' && (
           <>
-            <div className="flex flex-wrap items-center gap-3 print:hidden">
-              <Button variant="secondary" size="sm" onClick={loadSample}>
-                <Sparkles size={14} /> Peržiūrėti pavyzdinį palyginimą
-              </Button>
-              <Button variant="ghost" size="sm" onClick={resetAll}>
-                Išvalyti
-              </Button>
+            <section className="grid gap-7 border-b border-gray-200 pb-8 lg:grid-cols-[1fr_430px] lg:items-end print:hidden">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-600">Komercinis pasiūlymų vertinimas</p>
+                <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-gray-950 sm:text-4xl">Palyginkite rangovų pasiūlymus</h1>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600 sm:text-base">
+                  Įkelkite bent du pasiūlymus. Matysite ne tik bendrą kainą, bet ir trūkstamą apimtį, kainų išskirtis bei sąlygas, kurias verta patikslinti.
+                </p>
+                <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-gray-500">
+                  <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={14} className="text-success-600" aria-hidden /> Excel ir CSV</span>
+                  <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={14} className="text-success-600" aria-hidden /> Apimties palyginimas</span>
+                  <span className="inline-flex items-center gap-1.5"><CheckCircle2 size={14} className="text-success-600" aria-hidden /> Rizikų prioritetai</span>
+                </div>
+              </div>
+              <Stepper
+                steps={[{ label: 'Įkelti pasiūlymus' }, { label: 'Patikrinti duomenis' }, { label: 'Palyginti' }]}
+                currentStep={comparisonStep}
+                clickableSteps={analysis ? [1, 3] : []}
+                onStepClick={(step) => {
+                  if (step === 1) returnToInputs();
+                  if (step === 3) document.getElementById('comparison-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              />
+            </section>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+              <div className="flex items-center gap-2">
+                <Badge variant={readyBidCount >= 2 ? 'success' : 'neutral'}>{readyBidCount} paruošti pasiūlymai</Badge>
+                {analysis && !isSamplePreview && <Badge variant="info">Palyginimas paruoštas</Badge>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" onClick={loadSample}>
+                  <Sparkles size={14} /> Peržiūrėti pavyzdį
+                </Button>
+                {(readyBidCount > 0 || analysis) && <Button variant="ghost" size="sm" onClick={resetAll}>Išvalyti</Button>}
+              </div>
             </div>
+
+            {!analysis && (
+              <Card className="overflow-hidden print:hidden">
+                <CardContent className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1fr_1.1fr] lg:items-center">
+                  <div>
+                    <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 text-primary-600"><UploadCloud size={19} aria-hidden /></span>
+                    <h2 className="mt-4 text-lg font-semibold text-gray-900">Pradėkite nuo gautų failų</h2>
+                    <p className="mt-2 max-w-lg text-sm leading-6 text-gray-500">Kiekvienam rangovui įkelkite atskirą Excel arba CSV pasiūlymą. Aptiktus stulpelius galėsite patikrinti prieš palyginimą.</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    {[
+                      { icon: FileSpreadsheet, label: 'Įkelti', text: 'Failai ir kainos' },
+                      { icon: Layers3, label: 'Patikrinti', text: 'Apimtis ir eilutės' },
+                      { icon: Building2, label: 'Palyginti', text: 'Sprendimas ir rizikos' },
+                    ].map(({ icon: Icon, label, text }, index) => (
+                      <div key={label} className="relative rounded-lg border border-gray-200 bg-gray-50 px-2 py-4">
+                        <Icon size={17} className="mx-auto text-primary-600" aria-hidden />
+                        <p className="mt-2 font-semibold text-gray-800">{index + 1}. {label}</p>
+                        <p className="mt-1 hidden text-[11px] text-gray-400 sm:block">{text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {analysis && !isSamplePreview && (
+              <div className="flex justify-end print:hidden">
+                <Button variant="secondary" size="sm" onClick={returnToInputs}><ArrowLeft size={14} /> Redaguoti pasiūlymus</Button>
+              </div>
+            )}
 
             {isSamplePreview && (
               <Alert variant="info" title="Pavyzdinis palyginimas · duomenys netikri">
@@ -867,79 +945,86 @@ export default function BidGuard() {
               </Alert>
             )}
 
-            <div className={cn('grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 print:hidden', isSamplePreview && 'hidden')}>
+            <div className={cn('grid grid-cols-1 gap-4 lg:grid-cols-2 print:hidden', (isSamplePreview || analysis) && 'hidden')}>
               {bids.map((bid, idx) => (
-                <Card key={bid.id} className="flex flex-col">
-                  <CardContent className="flex flex-1 flex-col">
-                    <div className="mb-3 flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          Pasiūlymas {String(idx + 1).padStart(2, '0')}
-                        </p>
+                <Card key={bid.id} className="flex flex-col overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/70 px-5 py-3.5">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-primary-600 shadow-sm ring-1 ring-gray-200"><Building2 size={16} aria-hidden /></span>
+                      <div>
+                        <p className="text-xs font-semibold text-gray-800">Rangovo pasiūlymas {String(idx + 1).padStart(2, '0')}</p>
+                        <p className="mt-0.5 text-[11px] text-gray-400">Atskiras rangovo failas ir sąlygos</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {bid.name.trim() && bid.items.some((item) => item.desc.trim() && Number(item.price) > 0) && <Badge variant="success">Paruoštas</Badge>}
+                      {bids.length > 2 && (
+                        <button
+                          onClick={() => removeBid(bid.id)}
+                          className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-danger-50 hover:text-danger-600"
+                          aria-label="Šalinti pasiūlymą"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <CardContent className="flex flex-1 flex-col p-5">
+                    <div className="mb-4">
+                      <label className="mb-1.5 block text-xs font-medium text-gray-700">Rangovo pavadinimas</label>
+                      <div>
                         <Input
-                          placeholder="Subrangovo pavadinimas"
+                          placeholder="Pavyzdžiui, UAB Rangovas"
                           value={bid.name}
                           onChange={(e) => updateBid(bid.id, 'name', e.target.value)}
                         />
                       </div>
-                      {bids.length > 2 && (
-                        <button
-                          onClick={() => removeBid(bid.id)}
-                          className="mt-6 shrink-0 rounded-md p-1 text-gray-400 transition-colors duration-150 ease-out hover:bg-gray-100 hover:text-danger-600"
-                          aria-label="Šalinti pasiūlymą"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
                     </div>
-
-                    <div className="mb-3 space-y-2">
-                      {bid.items.map((item) => (
-                        <div key={item.id} className="flex gap-2">
-                          <Input
-                            className="flex-1 min-w-0"
-                            placeholder="Darbų aprašymas"
-                            value={item.desc}
-                            onChange={(e) => updateItem(bid.id, item.id, 'desc', e.target.value)}
-                          />
-                          <Input
-                            className="w-24 shrink-0 font-mono tabular-nums"
-                            placeholder="€"
-                            inputMode="decimal"
-                            value={item.price}
-                            onChange={(e) => updateItem(bid.id, item.id, 'price', e.target.value.replace(/[^0-9.]/g, ''))}
-                          />
-                          <button
-                            onClick={() => removeItem(bid.id, item.id)}
-                            className="shrink-0 rounded-md px-1 text-gray-400 transition-colors duration-150 ease-out hover:text-danger-600"
-                            aria-label="Šalinti eilutę"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-
-                    <button
-                      onClick={() => addItem(bid.id)}
-                      className="mb-3 flex items-center gap-1 self-start text-xs font-medium text-primary-600 hover:text-primary-700"
-                    >
-                      <Plus size={13} /> Pridėti eilutę
-                    </button>
 
                     <FileUpload
                       accept=".csv,.xlsx,.xls"
                       onFilesSelected={(files) => handleFileUpload(bid.id, files[0])}
-                      className="mb-3 py-4"
+                      label={uploadedFileNames[bid.id] ? 'Pakeisti pasiūlymo failą' : 'Įkelti pasiūlymo failą'}
+                      hint="Excel (.xlsx, .xls) arba CSV"
+                      className="mb-3 py-6"
                     />
 
-                    <Textarea
-                      className="mb-3 h-10 resize-none text-xs"
-                      placeholder="📋 Pažymėk lentelę Excel'yje → Ctrl+C → spausk čia → Ctrl+V"
-                      value=""
-                      onChange={() => {}}
-                      onPaste={(e) => handlePasteImport(bid.id, e)}
-                    />
+                    {uploadedFileNames[bid.id] && (
+                      <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-success-200 bg-success-50/60 px-3 py-2.5">
+                        <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-success-800"><FileSpreadsheet size={15} className="shrink-0" aria-hidden /><span className="truncate">{uploadedFileNames[bid.id]}</span></span>
+                        <Badge variant="success">{bid.items.filter((item) => item.desc.trim()).length} eil.</Badge>
+                      </div>
+                    )}
+
+                    <details className="group mt-auto border-t border-gray-100 pt-3">
+                      <summary className="flex cursor-pointer list-none items-center justify-between rounded-md px-1 py-2 text-xs font-medium text-gray-500 transition-colors hover:text-gray-900">
+                        Rankinis pildymas ir komercinės sąlygos
+                        <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        <Textarea
+                          className="h-12 resize-none text-xs"
+                          placeholder="Arba įklijuokite lentelę iš Excel (Ctrl+V)"
+                          value=""
+                          onChange={() => {}}
+                          onPaste={(e) => handlePasteImport(bid.id, e)}
+                        />
+                        <div className="space-y-2">
+                          {bid.items.map((item) => (
+                            <div key={item.id} className="flex gap-2">
+                              <Input className="min-w-0 flex-1" placeholder="Darbų aprašymas" value={item.desc} onChange={(e) => updateItem(bid.id, item.id, 'desc', e.target.value)} />
+                              <Input className="w-24 shrink-0 font-mono tabular-nums" placeholder="€" inputMode="decimal" value={item.price} onChange={(e) => updateItem(bid.id, item.id, 'price', e.target.value.replace(/[^0-9.]/g, ''))} />
+                              <button onClick={() => removeItem(bid.id, item.id)} className="shrink-0 rounded-md px-1 text-gray-400 transition-colors hover:text-danger-600" aria-label="Šalinti eilutę"><Trash2 size={14} /></button>
+                            </div>
+                          ))}
+                        </div>
+                        <button onClick={() => addItem(bid.id)} className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700"><Plus size={13} /> Pridėti eilutę</button>
+                        <div>
+                          <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-gray-400">Išimtys ir komercinės sąlygos</label>
+                          <Textarea className="h-20 resize-none" placeholder="Kas neįtraukta, kokios sąlygos ar prielaidos..." value={bid.exclusions} onChange={(e) => updateBid(bid.id, 'exclusions', e.target.value)} />
+                        </div>
+                      </div>
+                    </details>
 
                     {pendingImport?.bidId === bid.id && (
                       <Card variant="selected" className="mb-3">
@@ -1030,42 +1115,32 @@ export default function BidGuard() {
                       </Card>
                     )}
 
-                    <div className="mt-auto">
-                      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                        Išimtys / kvalifikacijos
-                      </p>
-                      <Textarea
-                        className="h-20 resize-none"
-                        placeholder="Kas neįtraukta, kokios sąlygos, prielaidos..."
-                        value={bid.exclusions}
-                        onChange={(e) => updateBid(bid.id, 'exclusions', e.target.value)}
-                      />
-                    </div>
                   </CardContent>
                 </Card>
               ))}
 
               <button
                 onClick={addBid}
-                className="flex min-h-[220px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-200 text-gray-500 transition-colors duration-150 ease-out hover:border-primary-400 hover:bg-primary-50/40 hover:text-primary-600"
+                className="flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white text-gray-500 transition-all duration-150 ease-out hover:border-primary-400 hover:bg-primary-50/40 hover:text-primary-600 lg:col-span-2"
               >
-                <Plus size={22} />
-                <span className="text-xs font-medium">Pridėti pasiūlymą</span>
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-50"><Plus size={18} /></span>
+                <span className="text-sm font-medium">Pridėti dar vieną rangovą</span>
               </button>
             </div>
 
-            <div className="flex items-center gap-4 pt-2 print:hidden">
-              {!isSamplePreview && (
+            <div className={cn('flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between print:hidden', (analysis || isSamplePreview) && 'hidden')}>
+              <div>
+                <p className="text-sm font-semibold text-gray-900">{readyBidCount >= 2 ? 'Pasiūlymai paruošti palyginimui' : 'Reikia bent dviejų pasiūlymų'}</p>
+                <Text size="small" muted className="mt-1">{readyBidCount} iš {bids.length} rangovų turi pavadinimą ir kainos duomenis.</Text>
+              </div>
+              <div className="flex items-center gap-3">
+                {!isSamplePreview && (
                 <Button variant="primary" size="lg" onClick={runAnalysis} disabled={!canAnalyze} isLoading={loading}>
                   {!loading && <ShieldAlert size={20} />}
-                  {loading ? 'Analizuojama...' : 'Analizuoti riziką'}
+                  {loading ? 'Palyginama...' : 'Palyginti pasiūlymus'}
                 </Button>
-              )}
-              {!canAnalyze && !loading && !isSamplePreview && (
-                <Text size="small" muted>
-                  Užpildyk bent 2 pasiūlymus (pavadinimą + bent po vieną eilutę su kaina).
-                </Text>
-              )}
+                )}
+              </div>
             </div>
 
             {error && <Alert variant="error">{error}</Alert>}
@@ -1321,7 +1396,7 @@ export default function BidGuard() {
             {savedProjects.length === 0 && (
               <EmptyState
                 title="Kol kas nieko neišsaugota"
-                description={'Padaryk analizę skiltyje „Nauja analizė" ir paspausk „Išsaugoti projektą".'}
+                description="Palyginkite rangovų pasiūlymus ir rezultatų suvestinėje paspauskite „Išsaugoti projektą“."
               />
             )}
             {savedProjects.map((p) => {
