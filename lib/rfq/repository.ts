@@ -6,6 +6,8 @@ import type {
   CreateSupplierRequestInput,
   StoredSupplierRequest,
   SupplierContact,
+  SupplierQuoteComparison,
+  SupplierQuoteRow,
   SupplierRequestRecipientStatus,
 } from './types';
 
@@ -78,8 +80,9 @@ export async function createStoredSupplierRequest(input: CreateSupplierRequestIn
     sourceReference: row.sourceReference,
   }));
   const title = `${input.projectName} – ${packageNames.join(', ') || 'pasirinkta darbų apimtis'}`;
-  const { data, error } = await supabase.rpc('create_supplier_request', {
+  const { data, error } = await supabase.rpc('create_supplier_request_version', {
     p_project_id: input.projectId,
+    p_parent_request_id: input.parentRequestId ?? null,
     p_title: title,
     p_subject: input.subject,
     p_body: input.body,
@@ -98,11 +101,44 @@ export async function listProjectSupplierRequests(projectId: string): Promise<St
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('supplier_requests')
-    .select('*, supplier_request_recipients(*)')
+    .select('*, supplier_request_items(*), supplier_request_recipients(*, supplier_quote_imports(*))')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false });
   if (error) throw new Error('Nepavyko įkelti tiekėjų užklausų istorijos.');
   return (data ?? []) as StoredSupplierRequest[];
+}
+
+export async function saveSupplierQuoteImport(input: {
+  requestId: string;
+  recipientId: string;
+  fileName: string;
+  fileSize: number;
+  fileType: 'xlsx' | 'pdf';
+  parsedRows: SupplierQuoteRow[];
+  comparison: SupplierQuoteComparison;
+}): Promise<void> {
+  const ownerId = await authenticatedUserId();
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) throw new Error('Duomenų bazė nesukonfigūruota.');
+  const status = input.comparison.missingItems.length > 0 || input.comparison.quantityMismatches.length > 0
+    ? 'warning'
+    : 'ready';
+  const warningMessage = status === 'warning'
+    ? 'Pasiūlymo apimtis nesutampa su išsiųsta užklausos versija.'
+    : null;
+  const { error } = await supabase.from('supplier_quote_imports').upsert({
+    owner_id: ownerId,
+    request_id: input.requestId,
+    recipient_id: input.recipientId,
+    file_name: input.fileName,
+    file_size: input.fileSize,
+    file_type: input.fileType,
+    parsed_rows: input.parsedRows,
+    comparison: input.comparison,
+    status,
+    warning_message: warningMessage,
+  }, { onConflict: 'request_id,recipient_id' });
+  if (error) throw new Error('Nepavyko išsaugoti tiekėjo pasiūlymo.');
 }
 
 export async function updateRecipientStatus(
@@ -124,4 +160,3 @@ export async function updateRecipientStatus(
     .eq('id', recipientId);
   if (error) throw new Error('Nepavyko pakeisti užklausos būsenos.');
 }
-

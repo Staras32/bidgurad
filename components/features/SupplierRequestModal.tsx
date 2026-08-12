@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, FileDown, FileSpreadsheet, Mail, Plus, Trash2, UsersRound } from 'lucide-react';
+import { AlertTriangle, Check, Copy, FileDown, FileSpreadsheet, GitCompare, Mail, Plus, Trash2, UsersRound } from 'lucide-react';
 
 import {
   Alert,
@@ -20,7 +20,8 @@ import type { BoqRow, WorkPackage } from '@/lib/boq/types';
 import { exportSupplierRequestExcel, exportSupplierRequestPdf } from '@/lib/rfq/exportSupplierRequest';
 import { createStoredSupplierRequest, createSupplier, deleteSupplier, listSuppliers } from '@/lib/rfq/repository';
 import { buildSupplierEmail, formatPositionCount, selectedPackageNames } from '@/lib/rfq/supplierRequest';
-import type { SupplierContact } from '@/lib/rfq/types';
+import { compareScopeVersion, validateRequestScope } from '@/lib/rfq/scopeValidation';
+import type { StoredSupplierRequest, SupplierContact } from '@/lib/rfq/types';
 
 interface SupplierRequestModalProps {
   open: boolean;
@@ -30,6 +31,7 @@ interface SupplierRequestModalProps {
   projectName: string;
   rows: BoqRow[];
   packages: WorkPackage[];
+  parentRequest?: StoredSupplierRequest | null;
 }
 
 const emptySupplier = { name: '', contactName: '', email: '', category: '' };
@@ -42,6 +44,7 @@ export function SupplierRequestModal({
   projectName,
   rows,
   packages,
+  parentRequest = null,
 }: SupplierRequestModalProps) {
   const [suppliers, setSuppliers] = useState<SupplierContact[]>([]);
   const [selectedSupplierIds, setSelectedSupplierIds] = useState<Set<string>>(new Set());
@@ -56,6 +59,11 @@ export function SupplierRequestModal({
   const [supplierDraft, setSupplierDraft] = useState(emptySupplier);
   const [actionError, setActionError] = useState('');
   const packageNames = useMemo(() => selectedPackageNames(rows, packages), [rows, packages]);
+  const scopeValidation = useMemo(() => validateRequestScope(rows), [rows]);
+  const versionDiff = useMemo(
+    () => parentRequest ? compareScopeVersion(parentRequest.supplier_request_items, rows) : null,
+    [parentRequest, rows]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -74,7 +82,13 @@ export function SupplierRequestModal({
       .then((contacts) => {
         if (!active) return;
         setSuppliers(contacts);
-        setSelectedSupplierIds((previous) => new Set([...previous].filter((id) => contacts.some((item) => item.id === id))));
+        const previousRecipientIds = parentRequest?.supplier_request_recipients
+          .map((recipient) => recipient.supplier_id)
+          .filter((id): id is string => Boolean(id)) ?? [];
+        setSelectedSupplierIds((previous) => {
+          const preferred = previousRecipientIds.length > 0 ? previousRecipientIds : [...previous];
+          return new Set(preferred.filter((id) => contacts.some((item) => item.id === id)));
+        });
       })
       .catch((loadError: Error) => {
         if (active) setActionError(loadError.message);
@@ -83,11 +97,15 @@ export function SupplierRequestModal({
         if (active) setLoadingSuppliers(false);
       });
     return () => { active = false; };
-  }, [open, projectId]);
+  }, [open, projectId, parentRequest]);
 
   const exportDetails = { projectName, rows, packages };
 
   const handleExcelExport = () => {
+    if (!scopeValidation.valid) {
+      setActionError('Prieš eksportą pataisykite visas nepilnas darbų apimties pozicijas.');
+      return;
+    }
     try {
       setActionError('');
       exportSupplierRequestExcel(exportDetails);
@@ -97,6 +115,10 @@ export function SupplierRequestModal({
   };
 
   const handlePdfExport = () => {
+    if (!scopeValidation.valid) {
+      setActionError('Prieš eksportą pataisykite visas nepilnas darbų apimties pozicijas.');
+      return;
+    }
     try {
       setActionError('');
       exportSupplierRequestPdf(exportDetails);
@@ -173,6 +195,10 @@ export function SupplierRequestModal({
       setActionError('Pasirinkite bent vieną tiekėją.');
       return;
     }
+    if (!scopeValidation.valid) {
+      setActionError('Užklausos išsaugoti negalima: pasirinktoje apimtyje yra nepilnų pozicijų.');
+      return;
+    }
     if (!subject.trim() || !body.trim()) {
       setActionError('Laiško tema ir tekstas negali būti tušti.');
       return;
@@ -189,6 +215,7 @@ export function SupplierRequestModal({
         rows,
         packages,
         supplierIds: [...selectedSupplierIds],
+        parentRequestId: parentRequest?.id ?? null,
       });
       onSaved(requestId);
       setSelectedSupplierIds(new Set());
@@ -208,7 +235,9 @@ export function SupplierRequestModal({
             <Mail size={20} aria-hidden />
           </div>
           <div>
-            <ModalTitle className="text-lg">Tiekėjų kainos pasiūlymo užklausa</ModalTitle>
+            <ModalTitle className="text-lg">
+              {parentRequest ? `Tiekėjų užklausos V${parentRequest.version_number + 1} versija` : 'Tiekėjų kainos pasiūlymo užklausa'}
+            </ModalTitle>
             <p className="mt-0.5 text-sm text-gray-500">Viena darbų apimtis, atskira kontroliuojama užklausa kiekvienam tiekėjui.</p>
           </div>
         </div>
@@ -220,6 +249,46 @@ export function SupplierRequestModal({
           <Alert variant="warning" title="Projektas dar neišsaugotas">
             Eksportus galite atsisiųsti dabar, tačiau tiekėjų kontaktams ir užklausos istorijai pirmiausia išsaugokite projektą.
           </Alert>
+        )}
+
+        {!scopeValidation.valid && (
+          <Alert variant="error" title={`Apimties patikra: ${scopeValidation.issues.length} nepilnos pozicijos`}>
+            <p>Eksportas ir užklausos išsaugojimas sustabdyti, kol bus nurodytas pozicijos numeris, mato vienetas ir kiekis.</p>
+            <ul className="mt-2 space-y-1">
+              {scopeValidation.issues.slice(0, 6).map((issue) => (
+                <li key={issue.rowId} className="flex gap-2">
+                  <span className="font-mono">{issue.positionNumber ?? 'Be Nr.'}</span>
+                  <span className="truncate">{issue.name}</span>
+                  <span className="ml-auto shrink-0 font-medium">
+                    Trūksta {issue.missing.map((field) => field === 'positionNumber' ? 'Nr.' : field === 'unit' ? 'vnt.' : 'kiekio').join(', ')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {scopeValidation.issues.length > 6 && <p className="mt-2 font-medium">Ir dar {scopeValidation.issues.length - 6} pozicijos.</p>}
+          </Alert>
+        )}
+
+        {parentRequest && versionDiff && (
+          <section className="rounded-xl border border-primary-200 bg-primary-50/40 p-4" aria-labelledby="version-changes-title">
+            <div className="flex items-start gap-3">
+              <GitCompare size={18} className="mt-0.5 shrink-0 text-primary-600" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <h3 id="version-changes-title" className="text-sm font-semibold text-gray-900">
+                  Pakeitimai nuo V{parentRequest.version_number}
+                </h3>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge variant={versionDiff.added.length ? 'info' : 'neutral'}>Pridėta {versionDiff.added.length}</Badge>
+                  <Badge variant={versionDiff.removed.length ? 'danger' : 'neutral'}>Pašalinta {versionDiff.removed.length}</Badge>
+                  <Badge variant={versionDiff.quantityChanged.length ? 'warning' : 'neutral'}>Pakeistas kiekis {versionDiff.quantityChanged.length}</Badge>
+                  <Badge variant="neutral">Nepakeista {versionDiff.unchanged}</Badge>
+                </div>
+                {versionDiff.added.length + versionDiff.removed.length + versionDiff.quantityChanged.length === 0 && (
+                  <p className="mt-2 text-xs text-gray-600">Apimtis nepasikeitė. Naują versiją kurkite tik tada, kai pasikeitė eilutės arba kiekiai.</p>
+                )}
+              </div>
+            </div>
+          </section>
         )}
 
         <section aria-labelledby="request-scope-title" className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
@@ -326,12 +395,12 @@ export function SupplierRequestModal({
               <span className="mb-1.5 block text-xs font-semibold text-gray-700">Pasiūlymą pateikti iki</span>
               <Input type="date" value={responseDeadline} onChange={(event) => setResponseDeadline(event.target.value)} />
             </label>
-            <button type="button" onClick={handleExcelExport} className="group flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left transition hover:border-primary-300 hover:bg-primary-50/40 focus:outline-none focus:ring-2 focus:ring-primary-500/40">
+            <button type="button" onClick={handleExcelExport} disabled={!scopeValidation.valid} className="group flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left transition hover:border-primary-300 hover:bg-primary-50/40 focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:opacity-50">
               <FileSpreadsheet size={19} className="text-success-700" aria-hidden />
               <span><span className="block text-sm font-semibold text-gray-900">Excel</span><span className="block text-xs text-gray-500">Atsisiųsti priedą</span></span>
               <FileDown size={15} className="ml-auto text-gray-300 group-hover:text-primary-600" aria-hidden />
             </button>
-            <button type="button" onClick={handlePdfExport} className="group flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left transition hover:border-primary-300 hover:bg-primary-50/40 focus:outline-none focus:ring-2 focus:ring-primary-500/40">
+            <button type="button" onClick={handlePdfExport} disabled={!scopeValidation.valid} className="group flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left transition hover:border-primary-300 hover:bg-primary-50/40 focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:opacity-50">
               <FileDown size={19} className="text-danger-700" aria-hidden />
               <span><span className="block text-sm font-semibold text-gray-900">PDF</span><span className="block text-xs text-gray-500">Atsisiųsti priedą</span></span>
               <FileDown size={15} className="ml-auto text-gray-300 group-hover:text-primary-600" aria-hidden />
@@ -365,9 +434,9 @@ export function SupplierRequestModal({
         <p className="text-xs text-gray-500">Užklausa ir pasirinktos eilutės bus išsaugotos projekto istorijoje.</p>
         <div className="flex w-full gap-2 sm:w-auto">
           <Button variant="secondary" onClick={onClose} className="flex-1 sm:flex-none">Uždaryti</Button>
-          <Button onClick={saveRequest} isLoading={savingRequest} disabled={!projectId || selectedSupplierIds.size === 0} className="flex-1 sm:flex-none">
-            {!savingRequest && <Mail size={16} aria-hidden />}
-            Išsaugoti užklausą ({selectedSupplierIds.size})
+          <Button onClick={saveRequest} isLoading={savingRequest} disabled={!projectId || selectedSupplierIds.size === 0 || !scopeValidation.valid} className="flex-1 sm:flex-none">
+            {!savingRequest && (scopeValidation.valid ? <Mail size={16} aria-hidden /> : <AlertTriangle size={16} aria-hidden />)}
+            {parentRequest ? `Išsaugoti V${parentRequest.version_number + 1}` : `Išsaugoti užklausą (${selectedSupplierIds.size})`}
           </Button>
         </div>
       </ModalFooter>

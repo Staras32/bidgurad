@@ -41,6 +41,7 @@ BidGuard naudoja Supabase autentifikacijai ir vartotojui priklausantiems BOQ pro
 2. SQL Editor lange eilės tvarka paleiskite migracijas:
    - `supabase/migrations/001_projects.sql`
    - `supabase/migrations/002_supplier_requests.sql`
+   - `supabase/migrations/003_request_versions_and_quotes.sql`
 3. Vercel projekto aplinkos kintamuosiuose pridėkite:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (senesniuose projektuose galima naudoti `NEXT_PUBLIC_SUPABASE_ANON_KEY`)

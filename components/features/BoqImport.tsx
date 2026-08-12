@@ -63,6 +63,7 @@ import {
 } from '@/lib/boq/workPackageOperations';
 import { SupplierRequestModal } from '@/components/features/SupplierRequestModal';
 import { SupplierRequestHistory } from '@/components/features/SupplierRequestHistory';
+import type { StoredSupplierRequest } from '@/lib/rfq/types';
 
 type ImportStatus = 'idle' | 'reading' | 'review' | 'ready' | 'error';
 
@@ -113,6 +114,7 @@ export function BoqImport() {
   const [supplierRequestOpen, setSupplierRequestOpen] = useState(false);
   const [supplierRequestRefreshKey, setSupplierRequestRefreshKey] = useState(0);
   const [supplierRequestSaved, setSupplierRequestSaved] = useState(false);
+  const [supplierRequestParent, setSupplierRequestParent] = useState<StoredSupplierRequest | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
@@ -809,7 +811,46 @@ export function BoqImport() {
                 </CardContent>
               </Card>
 
-              {projectId && <SupplierRequestHistory projectId={projectId} refreshKey={supplierRequestRefreshKey} />}
+              <Card className="border-primary-200 bg-primary-50/30">
+                <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="info">Kitas veiksmas</Badge>
+                      <span className="text-xs font-medium text-gray-500">Tiekėjų kainos pasiūlymo užklausa</span>
+                    </div>
+                    <h2 className="mt-2 text-base font-semibold text-gray-900">
+                      Pasirinkite siunčiamą darbų apimtį
+                    </h2>
+                    <p className="mt-1 text-sm text-gray-600">
+                      {selectedRequestRows.length > 0
+                        ? `Pažymėta ${selectedRequestRows.length.toLocaleString('lt-LT')} pozicijų. Galite parengti laišką ir Excel arba PDF priedą.`
+                        : `Galite pasirinkti visą grupę „${selectedPackage?.name ?? 'Kiti darbai'}“ arba pažymėti atskiras eilutes lentelėje.`}
+                    </p>
+                  </div>
+                  {selectedRequestRows.length > 0 ? (
+                    <Button size="lg" onClick={() => { setSupplierRequestParent(null); setSupplierRequestOpen(true); }} className="shrink-0">
+                      <Send size={17} aria-hidden />
+                      Paruošti užklausą ({selectedRequestRows.length})
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" size="lg" onClick={toggleAllVisibleRows} disabled={visibleRows.length === 0} className="shrink-0">
+                      Pasirinkti visą grupę ({visibleRows.length})
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+
+              {projectId && (
+                <SupplierRequestHistory
+                  projectId={projectId}
+                  refreshKey={supplierRequestRefreshKey}
+                  selectedRowsCount={selectedRequestRows.length}
+                  onCreateVersion={(request) => {
+                    setSupplierRequestParent(request);
+                    setSupplierRequestOpen(true);
+                  }}
+                />
+              )}
 
               {!headerFound && fileType === 'xlsx' && (
                 <Alert variant="warning" title="Antraštės eilutė neaptikta">
@@ -976,7 +1017,7 @@ export function BoqImport() {
                     <div className="flex flex-wrap items-center gap-2">
                       {selectedRowIds.size > 0 && (
                         <>
-                          <Button size="sm" onClick={() => setSupplierRequestOpen(true)}>
+                          <Button size="sm" onClick={() => { setSupplierRequestParent(null); setSupplierRequestOpen(true); }}>
                             <Send size={14} aria-hidden />
                             Paruošti tiekėjo užklausą ({selectedRowIds.size})
                           </Button>
@@ -1132,16 +1173,18 @@ export function BoqImport() {
 
       <SupplierRequestModal
         open={supplierRequestOpen && selectedRequestRows.length > 0}
-        onClose={() => setSupplierRequestOpen(false)}
+        onClose={() => { setSupplierRequestOpen(false); setSupplierRequestParent(null); }}
         onSaved={() => {
           setSupplierRequestSaved(true);
           setSupplierRequestRefreshKey((value) => value + 1);
+          setSupplierRequestParent(null);
           window.setTimeout(() => setSupplierRequestSaved(false), 4000);
         }}
         projectId={projectId}
         projectName={projectName || fileNameWithoutExtension(fileName)}
         rows={selectedRequestRows}
         packages={packages}
+        parentRequest={supplierRequestParent}
       />
     </div>
   );
