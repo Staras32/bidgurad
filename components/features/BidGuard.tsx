@@ -1,14 +1,16 @@
 'use client';
 
 import { useState, type ClipboardEvent } from 'react';
+import Link from 'next/link';
 import * as XLSX from 'xlsx';
 import {
+  ArrowLeft,
+  ArrowRight,
   Plus,
   Trash2,
   AlertTriangle,
   AlertCircle,
   Award,
-  Clock,
   Copy,
   Download,
   FileWarning,
@@ -489,7 +491,7 @@ export default function BidGuard() {
 
   const coverageForBid = (bidId: string) => {
     const rows = analysis?.scopeMatrix || [];
-    if (rows.length === 0) return { pct: 100, missing: 0, total: 0 };
+    if (rows.length === 0) return { pct: null, missing: 0, total: 0 };
     const missing = rows.filter((r) => {
       const cell = (r.eilutes || []).find((e) => e.bidId === bidId);
       return !cell || cell.yra === false;
@@ -520,9 +522,12 @@ export default function BidGuard() {
   const scopeGapCount = (analysis?.flags || []).filter((f) => f.tipas === 'scope_gap').length;
   const priceOutlierCount = (analysis?.flags || []).filter((f) => f.tipas === 'price_outlier').length;
   const highRiskFlagCount = (analysis?.flags || []).filter((f) => f.sunkumas === 'high').length;
-  const estimatedHoursSaved = analysis
-    ? Math.max(1, Math.round(((analysis.scopeMatrix?.length || 0) * Math.max(bids.length, 1) * 2) / 60))
-    : 0;
+  const reviewedComparisonPoints = (analysis?.scopeMatrix?.length || 0) * bids.length;
+  const positiveTotals = comparisonRows.map(({ bid }) => totalPriceForBid(bid)).filter((total) => total > 0);
+  const lowestTotal = positiveTotals.length ? Math.min(...positiveTotals) : 0;
+  const priorityFlags = [...(analysis?.flags || [])]
+    .sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.sunkumas] - { high: 0, medium: 1, low: 2 }[b.sunkumas]))
+    .slice(0, 3);
 
   const selectedBid = selectedBidId ? bids.find((b) => b.id === selectedBidId) || null : null;
   const selectedScore = selectedBidId ? analysis?.bidScores.find((s) => s.bidId === selectedBidId) || null : null;
@@ -735,6 +740,20 @@ export default function BidGuard() {
     <div className="min-h-screen w-full bg-background pb-24">
       <header className="border-b border-gray-100 bg-white">
         <div className="mx-auto max-w-5xl px-5 py-10 sm:px-10">
+          <div className="mb-7 flex flex-wrap items-center justify-between gap-3 print:hidden">
+            <Link
+              href="/new-project"
+              className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+            >
+              <ArrowLeft size={16} aria-hidden /> Grįžti į sąmatą
+            </Link>
+            <Link
+              href="/projects"
+              className="text-sm font-medium text-gray-500 transition-colors hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+            >
+              Mano projektai
+            </Link>
+          </div>
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-primary-600">
             Rizikos auditas · Subrangovų pasiūlymai
           </p>
@@ -985,69 +1004,130 @@ export default function BidGuard() {
             {analysis && (
               <div className="space-y-8 border-t border-gray-100 pt-8">
                 <div>
-                  <Heading level={2} className="mb-4">
-                    Rezultatų suvestinė
-                  </Heading>
-                  <Card>
-                    <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
-                      <div className="p-4">
-                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <Award size={11} /> Rekomenduojamas rangovas
+                  <div className="mb-4">
+                    <Heading level={2}>Sprendimo santrauka</Heading>
+                    <Text muted className="mt-1">
+                      Rekomendacija vertina kainą, apimties pilnumą, išimtis ir komercines sąlygas.
+                    </Text>
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-[1.65fr_1fr]">
+                    <Card variant="success" className="overflow-hidden">
+                      <CardContent className="p-6 sm:p-7">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div>
+                            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-success-700">
+                              <Award size={15} aria-hidden /> Rekomenduojamas rangovas
+                            </p>
+                            <p className="mt-3 text-2xl font-semibold tracking-tight text-gray-950 sm:text-3xl">
+                              {recommended?.bid.name || '—'}
+                            </p>
+                          </div>
+                          {recommended?.score && recommendedTier && (
+                            <Badge variant={recommendedTier.variant} className="px-3 py-1 text-sm">
+                              {recommended.score.balas}/100
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="mt-5 max-w-2xl text-sm leading-6 text-gray-700">
+                          {recommended?.score?.pagrindimas || analysis.santrauka}
                         </p>
-                        <p className="truncate text-base font-semibold text-gray-900">{recommended?.bid.name || '—'}</p>
-                        {recommended?.score && recommendedTier && (
-                          <Badge variant={recommendedTier.variant} className="mt-1.5">
-                            {recommended.score.balas}/100
-                          </Badge>
+                        {recommended && (
+                          <button
+                            type="button"
+                            onClick={() => openSupplierDetail(recommended.bid.id)}
+                            className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-success-700 transition-colors hover:text-success-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success-500/40"
+                          >
+                            Peržiūrėti vertinimą <ArrowRight size={15} aria-hidden />
+                          </button>
                         )}
-                      </div>
-                      <div className="p-4">
-                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <ShieldAlert size={11} /> Komercinės rizikos balas
+                      </CardContent>
+                    </Card>
+
+                    <Card variant={riskiest?.bid.id === recommended?.bid.id ? 'warning' : 'danger'}>
+                      <CardContent className="p-6">
+                        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-danger-700">
+                          <ShieldAlert size={15} aria-hidden /> Daugiausia dėmesio reikia
                         </p>
-                        <p className="text-base font-semibold text-gray-900">
-                          {riskiest?.score?.balas ?? '—'}
-                          <span className="text-xs font-normal text-gray-400">/100</span>
+                        <p className="mt-3 text-xl font-semibold text-gray-950">{riskiest?.bid.name || '—'}</p>
+                        <p className="mt-1 text-sm text-gray-600">
+                          Vertinimas {riskiest?.score?.balas ?? '—'}/100
                         </p>
-                        <p className="mt-0.5 truncate text-xs text-gray-500">{riskiest?.bid.name}</p>
-                      </div>
-                      <div className="p-4">
-                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <AlertTriangle size={11} /> Trūkstama apimtis
-                        </p>
-                        <p className="text-base font-semibold text-gray-900">{scopeGapCount}</p>
-                      </div>
-                      <div className="p-4">
-                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <TrendingUp size={11} /> Kainų išskirtys
-                        </p>
-                        <p className="text-base font-semibold text-gray-900">{priceOutlierCount}</p>
-                      </div>
-                      <div className="p-4">
-                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <FlagIcon size={11} /> Aukštos rizikos vėliavėlės
-                        </p>
-                        <p className="text-base font-semibold text-gray-900">{highRiskFlagCount}</p>
-                      </div>
-                      <div className="p-4">
-                        <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                          <Clock size={11} /> Sutaupytas laikas
-                        </p>
-                        <p className="text-base font-semibold text-gray-900">~{estimatedHoursSaved} val.</p>
-                      </div>
+                        {riskiest?.score?.pagrindimas && (
+                          <p className="mt-4 line-clamp-3 text-sm leading-6 text-gray-700">{riskiest.score.pagrindimas}</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <Card className="mt-4">
+                    <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 sm:grid-cols-4 sm:divide-y-0">
+                      {[
+                        { label: 'Trūkstama apimtis', value: scopeGapCount, icon: AlertTriangle },
+                        { label: 'Kainų išskirtys', value: priceOutlierCount, icon: TrendingUp },
+                        { label: 'Aukštos rizikos signalai', value: highRiskFlagCount, icon: FlagIcon },
+                        { label: 'Patikrinti palyginimo taškai', value: reviewedComparisonPoints, icon: ShieldCheck },
+                      ].map(({ label, value, icon: Icon }) => (
+                        <div key={label} className="p-4 sm:p-5">
+                          <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                            <Icon size={12} aria-hidden /> {label}
+                          </p>
+                          <p className="mt-2 text-xl font-semibold tabular-nums text-gray-900">{value}</p>
+                        </div>
+                      ))}
                     </div>
                   </Card>
                 </div>
 
+                <Alert variant="info" title="Bendra išvada">
+                  {analysis.santrauka}
+                </Alert>
+
+                {priorityFlags.length > 0 && (
+                  <div className="print:hidden">
+                    <div className="mb-4 flex items-end justify-between gap-4">
+                      <div>
+                        <Heading level={2}>Ką patikrinti pirmiausia</Heading>
+                        <Text muted className="mt-1">Svarbiausi klausimai prieš priimant komercinį sprendimą.</Text>
+                      </div>
+                      <Badge variant={highRiskFlagCount > 0 ? 'danger' : 'warning'}>{priorityFlags.length} prioritetai</Badge>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {priorityFlags.map((flag, index) => {
+                        const supplier = bids.find((bid) => bid.id === flag.bidId);
+                        return (
+                          <button
+                            key={`${flag.bidId}-${flag.tipas}-${index}`}
+                            type="button"
+                            onClick={() => openSupplierDetail(flag.bidId)}
+                            className="rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                          >
+                            <span className="flex items-center justify-between gap-2">
+                              <Badge variant={SEVERITY_BADGE_VARIANT[flag.sunkumas]}>{SEVERITY_LABEL[flag.sunkumas]}</Badge>
+                              <ArrowRight size={15} className="text-gray-400" aria-hidden />
+                            </span>
+                            <span className="mt-3 block text-xs font-semibold uppercase tracking-wide text-gray-400">
+                              {supplier?.name || 'Rangovas'} · {FLAG_TITLES[flag.tipas]}
+                            </span>
+                            <span className="mt-2 block line-clamp-3 text-sm leading-5 text-gray-700">{flag.aprasymas}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <Card className="print:hidden">
                   <CardContent className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-gray-400">Išvada</p>
-                      <p className="max-w-2xl text-base leading-relaxed text-gray-900">{analysis.santrauka}</p>
+                      <p className="text-sm font-semibold text-gray-900">Išsaugoti palyginimą</p>
+                      <p className="mt-1 max-w-lg text-xs leading-5 text-gray-500">
+                        Suteik objektui aiškų pavadinimą, kad komanda vėliau lengvai rastų šį sprendimą.
+                      </p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex w-full items-center gap-2 sm:w-auto">
                       <Input
-                        className="w-44"
+                        className="min-w-0 flex-1 sm:w-56"
                         placeholder="Objekto pavadinimas"
                         value={projectLabel}
                         onChange={(e) => setProjectLabel(e.target.value)}
@@ -1060,32 +1140,36 @@ export default function BidGuard() {
                 </Card>
 
                 <div>
-                  <Heading level={2} className="mb-4">
-                    Rangovų palyginimas
-                  </Heading>
+                  <div className="mb-4">
+                    <Heading level={2}>Rangovų palyginimas</Heading>
+                    <Text muted className="mt-1">Rangovai surikiuoti pagal vertinimą. Mažiausia kaina nebūtinai reiškia mažiausią riziką.</Text>
+                  </div>
                   <Table>
                     <TableHeader>
                       <TableRow hover={false}>
+                        <TableHeadCell className="w-12">Vieta</TableHeadCell>
                         <TableHeadCell>Rangovas</TableHeadCell>
                         <TableHeadCell>Bendra kaina</TableHeadCell>
-                        <TableHeadCell>Apimtis %</TableHeadCell>
-                        <TableHeadCell>Aptiktos eilutės</TableHeadCell>
+                        <TableHeadCell>Apimtis</TableHeadCell>
                         <TableHeadCell>Rizikos balas</TableHeadCell>
-                        <TableHeadCell>Trūkstami punktai</TableHeadCell>
+                        <TableHeadCell>Trūksta</TableHeadCell>
                         <TableHeadCell>Komercinis statusas</TableHeadCell>
+                        <TableHeadCell><span className="sr-only">Veiksmas</span></TableHeadCell>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {comparisonRows.map(({ bid, score }) => {
+                      {comparisonRows.map(({ bid, score }, index) => {
                         const cov = coverageForBid(bid.id);
                         const status = commercialStatus(bid.id);
                         const isRecommended = recommended?.bid.id === bid.id;
+                        const total = totalPriceForBid(bid);
+                        const priceDelta = lowestTotal > 0 ? ((total - lowestTotal) / lowestTotal) * 100 : 0;
                         return (
                           <TableRow
                             key={bid.id}
-                            onClick={() => openSupplierDetail(bid.id)}
-                            className="cursor-pointer print:cursor-auto"
+                            className={cn(isRecommended && 'bg-success-50/40')}
                           >
+                            <TableCell className="font-mono text-xs tabular-nums text-gray-400">{index + 1}</TableCell>
                             <TableCell className="font-medium text-gray-900">
                               <span className="flex items-center gap-2">
                                 {bid.name || '—'}
@@ -1096,15 +1180,38 @@ export default function BidGuard() {
                                 )}
                               </span>
                             </TableCell>
-                            <TableCell className="font-mono tabular-nums">
-                              €{totalPriceForBid(bid).toLocaleString('lt-LT')}
+                            <TableCell>
+                              <span className="block font-mono tabular-nums text-gray-900">€{total.toLocaleString('lt-LT')}</span>
+                              <span className="mt-0.5 block text-[11px] text-gray-400">
+                                {priceDelta <= 0.05 ? 'Mažiausia kaina' : `+${priceDelta.toFixed(1)} % nuo mažiausios`}
+                              </span>
                             </TableCell>
-                            <TableCell className="font-mono tabular-nums">{cov.pct}%</TableCell>
-                            <TableCell className="font-mono tabular-nums">{bid.items.length}</TableCell>
-                            <TableCell className="font-mono tabular-nums">{score?.balas ?? '—'}</TableCell>
+                            <TableCell>
+                              <span className="font-mono tabular-nums">{cov.pct === null ? 'Nežinoma' : `${cov.pct}%`}</span>
+                              <span className="mt-0.5 block text-[11px] text-gray-400">{bid.items.length} eil.</span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-mono tabular-nums text-gray-900">{score?.balas ?? '—'}/100</span>
+                              <span className="mt-1 block h-1.5 w-20 overflow-hidden rounded-full bg-gray-100" aria-hidden>
+                                <span
+                                  className={cn('block h-full rounded-full', score ? riskTier(score.balas).barClassName : 'bg-gray-300')}
+                                  style={{ width: `${Math.max(0, Math.min(100, score?.balas ?? 0))}%` }}
+                                />
+                              </span>
+                            </TableCell>
                             <TableCell className="font-mono tabular-nums">{cov.missing}</TableCell>
                             <TableCell>
                               <Badge variant={status.variant}>{status.label}</Badge>
+                            </TableCell>
+                            <TableCell className="print:hidden">
+                              <button
+                                type="button"
+                                onClick={() => openSupplierDetail(bid.id)}
+                                className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-primary-600 transition-colors hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40"
+                                aria-label={`Peržiūrėti rangovo ${bid.name || 'pasiūlymą'} detales`}
+                              >
+                                Peržiūrėti <ArrowRight size={13} aria-hidden />
+                              </button>
                             </TableCell>
                           </TableRow>
                         );
@@ -1113,7 +1220,12 @@ export default function BidGuard() {
                   </Table>
                 </div>
 
-                <div className="flex flex-wrap gap-2 print:hidden">
+                <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-6 print:hidden">
+                  {recommended && (
+                    <Button variant="primary" onClick={() => handleGenerateClarificationEmail(recommended.bid.id)}>
+                      <Mail size={15} /> Paruošti patikslinimo laišką
+                    </Button>
+                  )}
                   <Button variant="secondary" onClick={handleGeneratePdf}>
                     <Printer size={15} /> Generuoti palyginimo PDF
                   </Button>

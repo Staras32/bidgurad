@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Clock3, FileSpreadsheet, FolderOpen, LogOut, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, Clock3, FileSpreadsheet, FolderOpen, LogOut, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 
 import { Alert, Button, Card, CardContent, EmptyState, Input, Skeleton } from '@/components/ui';
 import type { StoredBoqProject } from '@/lib/projects';
@@ -87,7 +87,12 @@ export default function ProjectsPage() {
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white"><ShieldCheck size={18} /></span>
             <span className="font-semibold">BidGuard</span>
           </Link>
-          <Button variant="ghost" size="sm" onClick={signOut}><LogOut size={15} /> Atsijungti</Button>
+          <div className="flex items-center gap-1">
+            <Link href="/" className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900">
+              <ArrowLeft size={14} aria-hidden /> <span className="hidden sm:inline">Grįžti į pradžią</span><span className="sm:hidden">Grįžti</span>
+            </Link>
+            <Button variant="ghost" size="sm" onClick={signOut}><LogOut size={15} /> <span className="hidden sm:inline">Atsijungti</span></Button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-5 py-9 sm:px-8">

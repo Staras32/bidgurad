@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import {
+  ArrowLeft,
   AlertTriangle,
   CircleAlert,
   Check,
@@ -474,10 +475,12 @@ export function BoqImport() {
               Sąmatų valdymas
             </span>
           </Link>
-          <div className="flex items-center gap-4">
-            <span className="hidden text-xs text-gray-400 md:inline">Sąmata yra pagrindinis tiesos šaltinis</span>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Link href="/" className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 transition-colors hover:text-gray-900">
+              <ArrowLeft size={14} aria-hidden /> <span className="hidden sm:inline">Grįžti</span>
+            </Link>
             <Link href="/supplier-quotes" className="text-xs font-medium text-gray-500 transition-colors hover:text-primary-600">
-              Pasiūlymų analizė
+              <span className="hidden sm:inline">Pasiūlymų analizė</span><span className="sm:hidden">Palyginimas</span>
             </Link>
             <Link
               href={userEmail ? '/projects' : '/auth'}
