@@ -4,6 +4,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabasePublicConfig } from '@/lib/supabase/config';
 
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname === '/' && request.nextUrl.searchParams.has('project')) {
+    const projectUrl = request.nextUrl.clone();
+    projectUrl.pathname = '/new-project';
+    return NextResponse.redirect(projectUrl);
+  }
+
   const config = getSupabasePublicConfig();
   if (!config) return NextResponse.next();
 
@@ -32,5 +38,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/projects/:path*'],
+  matcher: ['/', '/projects/:path*'],
 };

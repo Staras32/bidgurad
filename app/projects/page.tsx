@@ -97,7 +97,7 @@ export default function ProjectsPage() {
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-gray-900">Mano projektai</h1>
             <p className="mt-2 text-sm text-gray-500">Sąmatos ir patvirtinti darbų paketai vienoje vietoje.</p>
           </div>
-          <Link href="/"><Button size="lg"><Plus size={18} /> Naujas sąmatos projektas</Button></Link>
+          <Link href="/new-project"><Button size="lg"><Plus size={18} /> Naujas sąmatos projektas</Button></Link>
         </div>
 
         {!isSupabaseConfigured() && <Alert variant="warning" title="Projektų saugykla dar neaktyvuota" className="mt-6">Reikia pridėti Supabase aplinkos raktus ir paleisti duomenų bazės migraciją.</Alert>}
@@ -106,7 +106,7 @@ export default function ProjectsPage() {
         {loading ? (
           <div className="mt-7 grid gap-4 md:grid-cols-2 lg:grid-cols-3">{[1,2,3].map((n) => <Skeleton key={n} className="h-44" />)}</div>
         ) : projects.length === 0 ? (
-          <Card className="mt-7"><CardContent className="py-14"><EmptyState icon={<FolderOpen size={28} />} title="Dar nėra išsaugotų projektų" description="Importuokite pirmą sąmatą, patikrinkite pozicijas ir išsaugokite darbų paketus." action={<Link href="/"><Button>Importuoti sąmatą</Button></Link>} /></CardContent></Card>
+          <Card className="mt-7"><CardContent className="py-14"><EmptyState icon={<FolderOpen size={28} />} title="Dar nėra išsaugotų projektų" description="Importuokite pirmą sąmatą, patikrinkite pozicijas ir išsaugokite darbų paketus." action={<Link href="/new-project"><Button>Importuoti sąmatą</Button></Link>} /></CardContent></Card>
         ) : (
           <div className="mt-7 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {projects.map((project) => (
@@ -151,7 +151,7 @@ export default function ProjectsPage() {
                     <span>{project.rows.length} pozicijos</span><span>·</span><span>{project.packages.length} paketai</span>
                   </div>
                   <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-400"><Clock3 size={13} /> {new Intl.DateTimeFormat('lt-LT', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(project.updated_at))}</div>
-                  <Link href={`/?project=${project.id}`} className="mt-5 block"><Button variant="secondary" className="w-full"><FolderOpen size={15} /> Atidaryti</Button></Link>
+                  <Link href={`/new-project?project=${project.id}`} className="mt-5 block"><Button variant="secondary" className="w-full"><FolderOpen size={15} /> Atidaryti</Button></Link>
                 </CardContent>
               </Card>
             ))}

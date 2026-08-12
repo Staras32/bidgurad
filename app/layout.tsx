@@ -10,9 +10,40 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'BidGuard – konkursinių sąmatų ir pasiūlymų rizikos valdymas',
+  metadataBase: new URL('https://www.bidguard.eu'),
+  title: {
+    default: 'BidGuard – statybos sąmatų ir tiekėjų pasiūlymų valdymas',
+    template: '%s – BidGuard',
+  },
   description:
-    'Sąmatų analizė, konkursinių dokumentų valdymas ir subrangovų pasiūlymų rizikos kontrolė.',
+    'Importuokite statybos sąmatas, parenkite darbų apimtį tiekėjams ir palyginkite gautus pasiūlymus.',
+  applicationName: 'BidGuard',
+  keywords: [
+    'statybos sąmata',
+    'sąmatų analizė',
+    'darbų kiekių žiniaraštis',
+    'tiekėjų pasiūlymų palyginimas',
+    'užklausa subrangovams',
+    'statybos projektų valdymas',
+  ],
+  authors: [{ name: 'BidGuard' }],
+  creator: 'BidGuard',
+  publisher: 'BidGuard',
+  formatDetection: { email: false, address: false, telephone: false },
+  alternates: { canonical: '/' },
+  openGraph: {
+    type: 'website',
+    locale: 'lt_LT',
+    url: '/',
+    siteName: 'BidGuard',
+    title: 'BidGuard – statybos sąmatų ir tiekėjų pasiūlymų valdymas',
+    description: 'Nuo Excel ar PDF sąmatos iki kontroliuojamos tiekėjo užklausos ir palyginto pasiūlymo.',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'BidGuard – statybos sąmatų ir tiekėjų pasiūlymų valdymas',
+    description: 'Nuo Excel ar PDF sąmatos iki kontroliuojamos tiekėjo užklausos ir palyginto pasiūlymo.',
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

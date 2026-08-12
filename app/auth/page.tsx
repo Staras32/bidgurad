@@ -168,7 +168,7 @@ export default function AuthPage() {
   return (
     <main className="min-h-screen bg-gray-50 px-5 py-10 sm:py-16">
       <div className="mx-auto max-w-md">
-        <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900">
+        <Link href="/new-project" className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900">
           <ArrowLeft size={16} /> Grįžti į sąmatos importą
         </Link>
         <div className="mb-7 flex items-center gap-3">

@@ -465,7 +465,7 @@ export function BoqImport() {
     <div className="flex min-h-screen flex-col bg-gray-50">
       <header className="border-b border-gray-200/80 bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
-          <Link href="/" className="flex items-center gap-2.5 text-gray-900 no-underline">
+          <Link href="/new-project" className="flex items-center gap-2.5 text-gray-900 no-underline">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white shadow-sm">
               <ShieldCheck size={18} aria-hidden />
             </span>
