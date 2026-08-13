@@ -30,6 +30,10 @@ export const metadata: Metadata = {
   authors: [{ name: 'BidGuard' }],
   creator: 'BidGuard',
   publisher: 'BidGuard',
+  icons: {
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml', sizes: '64x64' }],
+    shortcut: '/icon.svg',
+  },
   formatDetection: { email: false, address: false, telephone: false },
   alternates: { canonical: '/' },
   openGraph: {
